@@ -266,6 +266,31 @@ Cross-entropy stays the default. Chart:
 [`comparisons/focal_loss.png`](comparisons/focal_loss.png). Run:
 [`runs/2026-11-22_21-18-41/`](runs/2026-11-22_21-18-41/).
 
+### 16 instead of 32 channels per conv layer
+
+A run with 16 channels per conv layer (6,627 instead of 26,051 parameters) and
+otherwise the same settings as the batch-64 run with 32 channels. Both models
+were also evaluated on the same 51,200 fresh warped functions (seed 12345).
+
+| | 32 channels | 16 channels |
+|---|---|---|
+| Parameters | 26,051 | 6,627 |
+| Training time | 9.7 min | 8.7 min |
+| Training accuracy, last epoch | 99.10% | 98.24% |
+| Training accuracy, mean of last 10 epochs | 99.19% | 98.15% |
+| ≥ 98% after | 4.2 min | 7.6 min |
+| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 98.85% (587 wrong) |
+| Missed peaks / extra peaks | 264 / 10 | 431 / 156 |
+| Errors on peaks narrower than 4 samples | 192 | 347 |
+| Extra peaks at a high edge | 10 | 146 |
+
+The 16-channel model makes about twice as many errors, a significant
+difference: 200 functions are wrong for both models, 74 only with 32 channels
+and 387 only with 16 channels (McNemar z = −14.58). It misses narrow peaks more
+often and frequently counts a high edge as a peak again. 32 channels stay the
+default. Chart: [`comparisons/channels.png`](comparisons/channels.png). Run:
+[`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/).
+
 ## License
 
 [MIT](LICENSE)
