@@ -211,6 +211,27 @@ max pooling down to one position) and used the same warped data and settings
 with no drop of more than one percentage point between epochs. See
 [`runs/2026-11-22_18-17-39/`](runs/2026-11-22_18-17-39/).
 
+### Batch size comparison
+
+Three runs with batch sizes 256, 128 and 64. Everything else matched the third
+run: 50 epochs × 12,800 warped functions, learning rate 1e-3, seed 0. The
+batch-256 run reproduced the third run exactly (same loss and accuracy in
+every epoch).
+
+| Batch size | Steps | Time | ms per step | Last epoch | Best epoch | ≥ 98% after | ≥ 99% after |
+|---|---|---|---|---|---|---|---|
+| 256 | 2,500 | 8.4 min | 201 | 98.49% | 98.53% | 7.2 min | not reached |
+| 128 | 5,000 | 8.8 min | 106 | 98.77% | 99.00% | 5.7 min | 8.3 min |
+| 64 | 10,000 | 9.7 min | 58 | 99.10% | 99.34% | 4.2 min | 6.2 min |
+
+Smaller batches give more updates from the same functions. On the UHD 620, a
+step costs much less with a small batch, so the runs take only a little longer.
+Batch size 64 is ahead both per epoch and per minute of training. Chart:
+[`comparisons/batch_size.png`](comparisons/batch_size.png). Runs:
+[`runs/2026-11-22_18-46-09/`](runs/2026-11-22_18-46-09/) (256),
+[`runs/2026-11-22_18-54-34/`](runs/2026-11-22_18-54-34/) (128),
+[`runs/2026-11-22_19-03-23/`](runs/2026-11-22_19-03-23/) (64).
+
 ## License
 
 [MIT](LICENSE)
