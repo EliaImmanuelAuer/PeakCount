@@ -57,11 +57,18 @@ Each function is built from **knots**:
    `y_i + (y_{i+1} - y_i)·(3t² − 2t³)`. It is strictly monotone between knots
    and has zero slope at each knot, so the function has exactly the intended
    extrema.
-5. Sample at 256 evenly spaced points.
+5. Warp the function. Draw `g, h ~ U[-1, 1]` independently for each function
+   and use `warp_h(f(warp_g(x)))` with `warp_c(x) = x·(c·(x − 1) + 1)`. For
+   `c ∈ [-1, 1]`, `warp_c` is strictly increasing on `[0, 1]` and keeps `0` and
+   `1` fixed. Precomposing therefore only shifts the x-positions, and
+   postcomposing only distorts the values in `[0, 1]`. All peaks and valleys
+   are kept, so the label stays correct.
+6. Sample at 256 evenly spaced points.
 
-Knots very close together can make a peak disappear between two sample points.
-The label is still the intended class. In a check of 12,800 functions, 99.99%
-of labels matched the number of peaks counted in the samples.
+Knots very close together, or a warping that squeezes a narrow peak further,
+can make a peak disappear between two sample points. The label is still the
+intended class. In a check of 12,800 functions, 99.98% of labels matched the
+number of peaks counted in the samples.
 
 ## Training
 
@@ -164,7 +171,8 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 
 The first full training run (50 epochs on the UHD 620, about 9.5 minutes)
 reached a training accuracy of 98.20% in its last epoch, and 99.42% at best.
-See [`logs/`](logs/).
+See [`logs/`](logs/). That run used the data generation without the warping
+step (5), which was added afterwards.
 
 ## License
 

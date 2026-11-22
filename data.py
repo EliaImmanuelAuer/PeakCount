@@ -12,6 +12,12 @@ has zero slope at every knot, so the function has exactly the intended extrema.
 Knot values come from three bands, which keeps every extremum consistent:
 peaks ~ U[2/3, 1], edges ~ U[1/3, 2/3], valleys ~ U[0, 1/3].
 
+Each function is then warped: with g, h ~ U[-1, 1] drawn per function, the
+result is warp_h(f(warp_g(x))), where warp_c(x) = x * (c * (x - 1) + 1). For
+c in [-1, 1], warp_c is strictly increasing on [0, 1] with warp_c(0) = 0 and
+warp_c(1) = 1, so the warping keeps every peak and valley and the label stays
+correct.
+
 Knots are not required to keep a minimum distance, so very close knots can make
 a peak invisible on the sample grid; the label is still the intended class.
 """
@@ -36,6 +42,11 @@ def smoothstep(t: np.ndarray) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
+def warp(x: np.ndarray, c: float) -> np.ndarray:
+    """x * (c * (x - 1) + 1): strictly increasing map of [0, 1] onto itself for c in [-1, 1]."""
+    return x * (c * (x - 1.0) + 1.0)
+
+
 def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Sample one function with the given interior extrema pattern at the points x."""
     interior_x = np.sort(rng.uniform(0.0, 1.0, len(pattern)))
@@ -44,10 +55,14 @@ def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.n
     bands = [EDGE_BAND] + [PEAK_BAND if k == "P" else VALLEY_BAND for k in pattern] + [EDGE_BAND]
     knot_y = np.array([rng.uniform(lo, hi) for lo, hi in bands])
 
-    # Segment index i such that knot_x[i] <= x <= knot_x[i + 1].
-    i = np.clip(np.searchsorted(knot_x, x, side="right") - 1, 0, len(knot_x) - 2)
-    t = (x - knot_x[i]) / (knot_x[i + 1] - knot_x[i])
-    return knot_y[i] + (knot_y[i + 1] - knot_y[i]) * smoothstep(t)
+    g, h = rng.uniform(-1.0, 1.0, 2)
+    u = warp(x, g)  # precompose: evaluate the knot curve at warp_g(x)
+
+    # Segment index i such that knot_x[i] <= u <= knot_x[i + 1].
+    i = np.clip(np.searchsorted(knot_x, u, side="right") - 1, 0, len(knot_x) - 2)
+    t = (u - knot_x[i]) / (knot_x[i + 1] - knot_x[i])
+    f = knot_y[i] + (knot_y[i + 1] - knot_y[i]) * smoothstep(t)
+    return warp(f, h)  # postcompose
 
 
 def generate_batch(
