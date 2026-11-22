@@ -45,8 +45,10 @@ def plain_percent(value: float, _pos=None) -> str:
     return plain_decimal(100 * value) + "%"
 
 
-def plot_training_log(csv_path: Path) -> Path:
-    """Draw the training log at csv_path and save it as a PNG next to it; return the PNG path.
+def plot_training_log(csv_path: Path, png_path: Path) -> None:
+    """Draw the training log at csv_path and save it as a PNG at png_path.
+
+    The subtitle names the run by the folder that holds the CSV (runs/<date>_<time>/).
 
     Both y-axes are logarithmic and show the original values. An epoch with 100%
     accuracy would have error rate 0 (ln 0 = -inf); its error rate is clamped to
@@ -119,7 +121,7 @@ def plot_training_log(csv_path: Path) -> Path:
                 ax.spines[side].set_linewidth(1)
             ax.tick_params(which="both", colors=AXIS, labelcolor=TEXT_MUTED, length=0, pad=6)
 
-        subtitle = (f"{csv_path.name}  ·  after epoch {epochs[-1]}: "
+        subtitle = (f"run {csv_path.parent.name}  ·  after epoch {epochs[-1]}: "
                     f"loss {loss[-1]:.4f}, error rate {100 * raw_error[-1]:.2f}%")
         if clamped:
             subtitle += f"  ·  {clamped} epoch(s) at 100% accuracy shown as 1 error"
@@ -133,7 +135,5 @@ def plot_training_log(csv_path: Path) -> Path:
             text.set_color(TEXT_SECONDARY)
 
         fig.subplots_adjust(left=0.08, right=0.91, top=0.8, bottom=0.12)
-        png_path = csv_path.with_suffix(".png")
         # bbox_inches="tight" grows the margins if long tick labels would be cut off.
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
-    return png_path

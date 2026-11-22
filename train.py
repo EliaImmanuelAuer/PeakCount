@@ -22,8 +22,7 @@ BATCH_SIZE = 256
 LEARNING_RATE = 1e-3
 SEED = 0
 PROJECT_DIR = Path(__file__).resolve().parent
-CHECKPOINT_PATH = PROJECT_DIR / "peakcnn.pt"
-LOG_DIR = PROJECT_DIR / "logs"
+RUNS_DIR = PROJECT_DIR / "runs"  # each run gets runs/<date>_<time>/ with model.pt, log.csv, chart.png
 LOG_COLUMNS = ["epoch", "loss", "accuracy", "seconds", "functions_seen", "timestamp"]
 
 
@@ -37,8 +36,11 @@ def main() -> None:
     loss_fn = nn.CrossEntropyLoss()
     steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
 
-    LOG_DIR.mkdir(exist_ok=True)
-    log_path = LOG_DIR / f"training_log_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
+    run_dir = RUNS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}"
+    run_dir.mkdir(parents=True)
+    model_path = run_dir / "model.pt"
+    log_path = run_dir / "log.csv"
+    chart_path = run_dir / "chart.png"
     functions_seen = 0
 
     with open(log_path, "w", newline="") as log_file:
@@ -69,7 +71,7 @@ def main() -> None:
                 total_seen += len(labels)
 
             state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-            torch.save(state, CHECKPOINT_PATH)
+            torch.save(state, model_path)
 
             seconds = time.perf_counter() - start
             mean_loss = total_loss / total_seen
@@ -93,9 +95,8 @@ def main() -> None:
                 f"({seconds:.1f} s)"
             )
 
-    print(f"saved weights to {CHECKPOINT_PATH}")
-    print(f"saved training log to {log_path}")
-    print(f"saved training chart to {plot_training_log(log_path)}")
+    plot_training_log(log_path, chart_path)
+    print(f"saved weights, training log and chart to {run_dir}")
 
 
 if __name__ == "__main__":

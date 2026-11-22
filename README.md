@@ -84,11 +84,18 @@ constants at the top of the file:
 | Loss | Cross-entropy |
 | Seed | 0 |
 
-After every epoch it prints the mean training loss and accuracy and saves the
-weights (`state_dict`) to `peakcnn.pt`.
+Each run gets its own folder, named after its start time:
 
-Each run also writes a training log to `logs/training_log_<date>_<time>.csv`,
-adding one row after every epoch so an interrupted run keeps its log:
+```
+runs/<date>_<time>/
+  model.pt    weights (state_dict), overwritten after every epoch
+  log.csv     one row per epoch
+  chart.png   drawn after the last epoch
+```
+
+After every epoch, `train.py` prints the mean training loss and accuracy, saves
+the weights, and adds a row to the log, so an interrupted run keeps its
+progress. The log has these columns:
 
 | Column | Meaning |
 |---|---|
@@ -99,8 +106,8 @@ adding one row after every epoch so an interrupted run keeps its log:
 | `functions_seen` | Total number of training functions so far |
 | `timestamp` | Local time when the epoch ended (ISO 8601) |
 
-After the last epoch, [`plot.py`](plot.py) draws the log as a chart and saves it
-next to the CSV under the same name with `.png`. The chart shows loss (left
+After the last epoch, [`plot.py`](plot.py) draws the log as `chart.png`. The
+chart shows loss (left
 axis) and error rate `1 − accuracy` (right axis, in %) per epoch in a single
 chart. Both axes are logarithmic, so the curves are `ln(loss)` and
 `ln(1 − accuracy)`, while the ticks show the original values. Both axes span
@@ -110,7 +117,8 @@ is therefore shown as one mistake (`1/n` for `n` functions in that epoch), and
 the subtitle notes it.
 `plot.py` is only called from `train.py` and does not run on its own.
 
-The logs and charts are committed to the repository.
+The logs and charts are committed to the repository. The model files are
+git-ignored.
 
 ### Optimizer
 
@@ -171,7 +179,7 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 
 The first full training run (50 epochs on the UHD 620, about 9.5 minutes)
 reached a training accuracy of 98.20% in its last epoch, and 99.42% at best.
-See [`logs/`](logs/). That run used the data generation without the warping
+See [`runs/2026-11-22_16-49-44/`](runs/2026-11-22_16-49-44/). That run used the data generation without the warping
 step (5), which was added afterwards.
 
 ## License
