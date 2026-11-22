@@ -241,6 +241,28 @@ much per epoch as 16, but is slower per minute. Chart:
 [`runs/2026-11-22_19-38-11/`](runs/2026-11-22_19-38-11/) (16),
 [`runs/2026-11-22_19-55-02/`](runs/2026-11-22_19-55-02/) (8).
 
+### Focal loss
+
+A run with focal loss (γ = 2) and otherwise the same settings as the batch-64
+cross-entropy run. Both models were also evaluated on the same 51,200 fresh
+warped functions (seed 12345).
+
+| | Cross-entropy | Focal loss (γ = 2) |
+|---|---|---|
+| Training time | 9.7 min | 9.8 min |
+| Training accuracy, last epoch | 99.10% | 99.14% |
+| Training accuracy, mean of last 10 epochs | 99.19% | 99.16% |
+| ≥ 99% after | 6.2 min | 6.9 min |
+| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.45% (281 wrong) |
+| Errors on peaks narrower than 4 samples | 192 | 175 |
+
+The difference is not significant. 194 functions are wrong for both models,
+80 only for cross-entropy and 87 only for focal loss (McNemar z = −0.54).
+Focal loss misses slightly fewer narrow peaks but makes more other errors.
+Cross-entropy stays the default. Chart:
+[`comparisons/focal_loss.png`](comparisons/focal_loss.png). Run:
+[`runs/2026-11-22_21-18-41/`](runs/2026-11-22_21-18-41/).
+
 ## License
 
 [MIT](LICENSE)
