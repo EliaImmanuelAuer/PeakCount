@@ -19,7 +19,7 @@ from plot import plot_training_log
 
 EPOCHS = 50
 FUNCTIONS_PER_EPOCH = 12_800
-BATCH_SIZE = 256
+BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
 SEED = 0
 PROJECT_DIR = Path(__file__).resolve().parent

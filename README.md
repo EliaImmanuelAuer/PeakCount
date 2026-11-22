@@ -95,7 +95,7 @@ constants at the top of the file:
 |---|---|
 | Epochs | 50 |
 | Functions per epoch | 12,800 (freshly generated) |
-| Batch size | 256 |
+| Batch size | 64 (256 in runs before the batch size comparison) |
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Loss | Cross-entropy |
 | Seed | 0 |
