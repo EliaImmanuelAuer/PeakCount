@@ -23,8 +23,10 @@ GRIDLINE = "#e1e0d9"
 AXIS = "#c3c2b7"
 LOSS_COLOR = "#2a78d6"   # categorical slot 1 (blue)
 ERROR_COLOR = "#eb6834"  # categorical slot 2 (orange)
-# Categorical slots 1-3 (blue, orange, aqua), in fixed order, for comparing runs.
-RUN_COLORS = ["#2a78d6", "#eb6834", "#1baf7a"]
+# Categorical slots 1-6 (blue, orange, aqua, yellow, magenta, green), in fixed order, for
+# comparing runs. Several of them are light on the surface, so lines also get direct labels.
+RUN_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
+LABEL_MIN_GAP = 0.05  # minimum vertical distance of end labels, as a fraction of the axes height
 
 RC = {
     "font.family": ["Segoe UI", "DejaVu Sans"],
@@ -144,12 +146,26 @@ def plot_training_log(csv_path: Path, png_path: Path) -> None:
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
 
 
+def spread_labels(positions: list[float], min_gap: float) -> list[float]:
+    """Move label positions (axes fractions) apart to at least min_gap, keeping their order and mean."""
+    order = sorted(range(len(positions)), key=positions.__getitem__)
+    placed = [positions[i] for i in order]
+    for k in range(1, len(placed)):
+        placed[k] = max(placed[k], placed[k - 1] + min_gap)
+    shift = sum(placed) / len(placed) - sum(positions) / len(positions)
+    result = [0.0] * len(positions)
+    for k, i in enumerate(order):
+        result[i] = placed[k] - shift
+    return result
+
+
 def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: str) -> None:
-    """Compare the error rates of up to 3 runs: per epoch (left) and over training minutes (right).
+    """Compare the error rates of up to 6 runs: per epoch (left) and over training minutes (right).
 
     Each run directory must contain config.json and log.csv; runs are labelled by
     config[setting], e.g. setting="batch_size". Error rates are clamped to 1/n like
-    in plot_training_log.
+    in plot_training_log. The right chart labels each line at its end; labels that
+    would overlap are moved apart and joined to their line end by a thin leader line.
     """
     if not 1 <= len(run_dirs) <= len(RUN_COLORS):
         raise ValueError(f"can compare 1 to {len(RUN_COLORS)} runs, got {len(run_dirs)}")
@@ -168,6 +184,7 @@ def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: s
             total += float(r["seconds"])
             minutes.append(total / 60)
         runs.append(dict(
+            value=config[setting],
             label=f"{setting.replace('_', ' ')} {config[setting]}",
             epochs=[int(r["epoch"]) for r in rows],
             minutes=minutes,
@@ -203,6 +220,22 @@ def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: s
         ax_time.set_xlabel("Training time (minutes)", color=TEXT_SECONDARY)
         ax_epoch.set_ylabel("Error rate 1 − accuracy (log scale)", color=TEXT_SECONDARY)
 
+        # Direct labels at the line ends of the time chart, spread apart where they would collide.
+        ends = [(run["minutes"][-1], run["error"][-1]) for run in runs]
+        natural = [(math.log10(e) - lo) / (hi - lo) for _, e in ends]
+        placed = spread_labels(natural, LABEL_MIN_GAP)
+        x_pad = 0.012 * ax_time.get_xlim()[1]
+        for run, (x_end, y_end), y_nat, y_lab in zip(runs, ends, natural, placed):
+            moved = abs(y_lab - y_nat) > 1e-9
+            ax_time.annotate(
+                str(run["value"]), xy=(x_end, y_end), xytext=(x_end + x_pad, y_lab),
+                textcoords=("data", "axes fraction"), va="center", ha="left",
+                fontsize=9, color=TEXT_SECONDARY, annotation_clip=False, zorder=5,
+                bbox=dict(boxstyle="square,pad=0.15", facecolor=SURFACE, edgecolor="none"),
+                arrowprops=dict(arrowstyle="-", color=TEXT_MUTED, linewidth=0.8,
+                                shrinkA=0, shrinkB=2) if moved else None,
+            )
+
         for ax in (ax_epoch, ax_time):
             ax.set_facecolor(SURFACE)
             ax.grid(axis="y", which="major", color=GRIDLINE, linewidth=1)
@@ -219,7 +252,8 @@ def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: s
         fig.text(0.07, 0.905, "runs " + ", ".join(Path(d).name for d in run_dirs),
                  ha="left", fontsize=9, color=TEXT_SECONDARY)
         legend = ax_epoch.legend(handles=handles, loc="lower left", bbox_to_anchor=(0, 1.01),
-                                 ncol=1, frameon=False, borderaxespad=0, handlelength=1.6)
+                                 ncol=1 if len(runs) <= 3 else 2, frameon=False,
+                                 borderaxespad=0, handlelength=1.6, columnspacing=2.0)
         for text in legend.get_texts():
             text.set_color(TEXT_SECONDARY)
 
