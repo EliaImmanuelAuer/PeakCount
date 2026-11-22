@@ -179,8 +179,13 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 
 The first full training run (50 epochs on the UHD 620, about 9.5 minutes)
 reached a training accuracy of 98.20% in its last epoch, and 99.42% at best.
-See [`runs/2026-11-22_16-49-44/`](runs/2026-11-22_16-49-44/). That run used the data generation without the warping
-step (5), which was added afterwards.
+See [`runs/2026-11-22_16-49-44/`](runs/2026-11-22_16-49-44/). That run used
+the data generation without the warping step (5), which was added afterwards.
+
+The second run, with warped functions and the same settings (about 10
+minutes), reached 96.65% in its last epoch and 97.04% at best. Its accuracy was
+still rising at the end. See
+[`runs/2026-11-22_17-40-36/`](runs/2026-11-22_17-40-36/).
 
 ## License
 
