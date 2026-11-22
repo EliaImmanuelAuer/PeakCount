@@ -94,8 +94,13 @@ adding one row after every epoch so an interrupted run keeps its log:
 
 After the last epoch, [`plot.py`](plot.py) draws the log as a chart and saves it
 next to the CSV under the same name with `.png`. The chart shows loss (left
-axis) and accuracy (right axis, in %) per epoch in a single chart. Both axes
-have 5 equal intervals, so their ticks line up with the same gridlines.
+axis) and error rate `1 − accuracy` (right axis, in %) per epoch in a single
+chart. Both axes are logarithmic, so the curves are `ln(loss)` and
+`ln(1 − accuracy)`, while the ticks show the original values. Both axes span
+the same number of powers of ten, so their ticks line up with the same
+gridlines. An epoch with 100% accuracy would have `ln(0) = −∞`. Its error rate
+is therefore shown as one mistake (`1/n` for `n` functions in that epoch), and
+the subtitle notes it.
 `plot.py` is only called from `train.py` and does not run on its own.
 
 The logs and charts are committed to the repository.
