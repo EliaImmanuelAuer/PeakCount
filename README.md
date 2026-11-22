@@ -154,11 +154,12 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 - [x] Model (`model.py`)
 - [x] Training data generation and peak definition (`data.py`)
 - [x] Training script (`train.py`)
-- [ ] Training run
+- [x] Training run
 - [ ] Evaluation
 
-A forward and backward pass runs on the UHD 620 via DirectML. The model has not
-been trained yet.
+The first full training run (50 epochs on the UHD 620, about 9.5 minutes)
+reached a training accuracy of 98.20% in its last epoch, and 99.42% at best.
+See [`logs/`](logs/).
 
 ## License
 
