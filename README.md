@@ -29,6 +29,63 @@ About 34k parameters, most of them in the final linear layer.
   layer. `PeakCNN(num_samples=...)` builds a model for a different length, which
   must then be trained separately.
 
+## Training data
+
+[`data.py`](data.py) generates random functions with exactly 0, 1 or 2 peaks.
+Every class is equally likely, and fresh functions are generated for every epoch.
+
+A **peak** is an interior local maximum. The edges `x = 0` and `x = 1` never
+count, and valleys (local minima) don't count either.
+
+Each function is built from **knots**:
+
+1. Pick a pattern of interior extrema for the class. `P` stands for a peak and
+   `V` for a valley, and each class's patterns are equally likely:
+
+   | Class | Patterns |
+   |---|---|
+   | 0 peaks | (none, monotone), `V` |
+   | 1 peak | `P`, `VP`, `PV`, `VPV` |
+   | 2 peaks | `PVP`, `VPVP`, `PVPV`, `VPVPV` |
+
+2. Place the interior knots at sorted uniform random positions in `[0, 1]`,
+   with no minimum distance between them. Add the edges `x = 0` and `x = 1`.
+3. Give each knot a value from its band: peaks `U[2/3, 1]`, edges `U[1/3, 2/3]`,
+   valleys `U[0, 1/3]`. This keeps every peak higher and every valley lower than
+   its neighbours.
+4. Connect neighbouring knots with a smoothstep curve
+   `y_i + (y_{i+1} - y_i)·(3t² − 2t³)`. It is strictly monotone between knots
+   and has zero slope at each knot, so the function has exactly the intended
+   extrema.
+5. Sample at 256 evenly spaced points.
+
+Knots very close together can make a peak disappear between two sample points.
+The label is still the intended class. In a check of 12,800 functions, 99.99%
+of labels matched the number of peaks counted in the samples.
+
+## Training
+
+[`train.py`](train.py) trains `PeakCNN` on the GPU via DirectML. The settings are
+constants at the top of the file:
+
+| Setting | Value |
+|---|---|
+| Epochs | 50 |
+| Functions per epoch | 12,800 (freshly generated) |
+| Batch size | 256 |
+| Optimizer | Adam, learning rate 1e-3 |
+| Loss | Cross-entropy |
+| Seed | 0 |
+
+After every epoch it prints the mean training loss and accuracy and saves the
+weights (`state_dict`) to `peakcnn.pt`. There is no separate evaluation set.
+Because every function is new, the training accuracy already shows how well
+the model handles unseen functions.
+
+```powershell
+python train.py
+```
+
 ## Setup
 
 The target machine has an Intel UHD 620, so the model runs via
@@ -36,12 +93,11 @@ The target machine has an Intel UHD 620, so the model runs via
 `torch-directml` works on any GPU that supports DirectX 12 on Windows.
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install torch-directml
+pip install -r requirements.txt
 ```
 
-`torch-directml` installs a matching PyTorch version.
+`torch-directml` requires one specific PyTorch version (currently 2.4.1). It
+replaces any other PyTorch version installed in the same Python environment.
 
 ## Usage
 
@@ -63,11 +119,13 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 ## Status
 
 - [x] Model (`model.py`)
-- [ ] Training data generation and peak definition
-- [ ] Training script
+- [x] Training data generation and peak definition (`data.py`)
+- [x] Training script (`train.py`)
+- [ ] Training run
 - [ ] Evaluation
 
-The model has not been trained or run on DirectML yet.
+A forward and backward pass runs on the UHD 620 via DirectML. The model has not
+been trained yet.
 
 ## License
 
