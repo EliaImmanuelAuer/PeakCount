@@ -14,6 +14,7 @@ import torch_directml
 from data import generate_batch
 from model import NUM_SAMPLES, PeakCNN
 from optim import Adam
+from plot import plot_training_log
 
 EPOCHS = 50
 FUNCTIONS_PER_EPOCH = 12_800
@@ -94,6 +95,7 @@ def main() -> None:
 
     print(f"saved weights to {CHECKPOINT_PATH}")
     print(f"saved training log to {log_path}")
+    print(f"saved training chart to {plot_training_log(log_path)}")
 
 
 if __name__ == "__main__":

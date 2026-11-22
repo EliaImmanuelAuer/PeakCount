@@ -92,7 +92,13 @@ adding one row after every epoch so an interrupted run keeps its log:
 | `functions_seen` | Total number of training functions so far |
 | `timestamp` | Local time when the epoch ended (ISO 8601) |
 
-The logs are committed to the repository.
+After the last epoch, [`plot.py`](plot.py) draws the log as a chart and saves it
+next to the CSV under the same name with `.png`. The chart shows loss (left
+axis) and accuracy (right axis, in %) per epoch in a single chart. Both axes
+have 5 equal intervals, so their ticks line up with the same gridlines.
+`plot.py` is only called from `train.py` and does not run on its own.
+
+The logs and charts are committed to the repository.
 
 ### Optimizer
 
