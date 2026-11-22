@@ -78,7 +78,21 @@ constants at the top of the file:
 | Seed | 0 |
 
 After every epoch it prints the mean training loss and accuracy and saves the
-weights (`state_dict`) to `peakcnn.pt`. There is no separate evaluation set.
+weights (`state_dict`) to `peakcnn.pt`.
+
+Each run also writes a training log to `logs/training_log_<date>_<time>.csv`,
+adding one row after every epoch so an interrupted run keeps its log:
+
+| Column | Meaning |
+|---|---|
+| `epoch` | Epoch number, starting at 1 |
+| `loss` | Mean cross-entropy loss over the epoch |
+| `accuracy` | Fraction of correctly classified functions (0 to 1) |
+| `seconds` | Duration of the epoch |
+| `functions_seen` | Total number of training functions so far |
+| `timestamp` | Local time when the epoch ended (ISO 8601) |
+
+The logs are committed to the repository. There is no separate evaluation set.
 Because every function is new, the training accuracy already shows how well
 the model handles unseen functions.
 
