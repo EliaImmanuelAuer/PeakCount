@@ -81,11 +81,6 @@ Each function is built from **knots**:
    are kept, so the label stays correct.
 6. Sample at 284 evenly spaced points (256 in the two runs from 2026-11-22).
 
-The generation is vectorized with numpy over a whole batch. `sample_params`
-draws the random parameters (classes, patterns, knots, `g`, `h`), and
-`evaluate` computes the functions from them. An epoch of 12,800 functions takes
-about 0.7 s to generate.
-
 Knots very close together, or a warping that squeezes a narrow peak further,
 can make a peak disappear between two sample points. The label is still the
 intended class. In a check of 12,800 functions, 99.98% of labels matched the

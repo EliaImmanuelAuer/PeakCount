@@ -20,13 +20,7 @@ correct.
 
 Knots are not required to keep a minimum distance, so very close knots can make
 a peak invisible on the sample grid; the label is still the intended class.
-
-Generation is vectorized over the batch: sample_params draws the random
-parameters of all functions at once, and evaluate computes the functions from
-those parameters.
 """
-
-from typing import NamedTuple
 
 import numpy as np
 
@@ -53,74 +47,22 @@ def warp(x: np.ndarray, c: float) -> np.ndarray:
     return x * (c * (x - 1.0) + 1.0)
 
 
-# All patterns in one table, so a batch can look up its knot kinds by pattern index.
-EDGE, PEAK, VALLEY = 0, 1, 2
-BAND_LOW = np.array([EDGE_BAND[0], PEAK_BAND[0], VALLEY_BAND[0]])
-BAND_HIGH = np.array([EDGE_BAND[1], PEAK_BAND[1], VALLEY_BAND[1]])
-MAX_INTERIOR = max(len(p) for patterns in PATTERNS.values() for p in patterns)
-MAX_KNOTS = MAX_INTERIOR + 2  # plus the edges x = 0 and x = 1
+def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Sample one function with the given interior extrema pattern at the points x."""
+    interior_x = np.sort(rng.uniform(0.0, 1.0, len(pattern)))
+    knot_x = np.concatenate(([0.0], interior_x, [1.0]))
 
-_ALL_PATTERNS = [p for label in range(NUM_CLASSES) for p in PATTERNS[label]]
-_CLASS_COUNT = np.array([len(PATTERNS[label]) for label in range(NUM_CLASSES)])
-_CLASS_OFFSET = np.concatenate(([0], np.cumsum(_CLASS_COUNT)[:-1]))
-_PATTERN_INTERIOR = np.array([len(p) for p in _ALL_PATTERNS])
-# Knot kinds per pattern: edge, interior extrema, edge, then edge padding up to MAX_KNOTS.
-_PATTERN_KINDS = np.array([
-    [EDGE] + [PEAK if k == "P" else VALLEY for k in p] + [EDGE] * (MAX_KNOTS - 1 - len(p))
-    for p in _ALL_PATTERNS
-])
+    bands = [EDGE_BAND] + [PEAK_BAND if k == "P" else VALLEY_BAND for k in pattern] + [EDGE_BAND]
+    knot_y = np.array([rng.uniform(lo, hi) for lo, hi in bands])
 
+    g, h = rng.uniform(-1.0, 1.0, 2)
+    u = warp(x, g)  # precompose: evaluate the knot curve at warp_g(x)
 
-class FunctionParams(NamedTuple):
-    """Random parameters of a batch of functions.
-
-    Each row of knot_x / knot_y holds the num_interior + 2 real knots, followed by
-    padding knots at x = 1 that are never used.
-    """
-
-    labels: np.ndarray        # (batch,) int, number of peaks
-    knot_x: np.ndarray        # (batch, MAX_KNOTS) float, sorted knot positions
-    knot_y: np.ndarray        # (batch, MAX_KNOTS) float, knot values
-    num_interior: np.ndarray  # (batch,) int, number of interior knots
-    g: np.ndarray             # (batch,) float, precomposition warp parameter
-    h: np.ndarray             # (batch,) float, postcomposition warp parameter
-
-
-def sample_params(batch_size: int, rng: np.random.Generator) -> FunctionParams:
-    """Draw the random parameters of batch_size functions (each class equally likely)."""
-    labels = rng.integers(0, NUM_CLASSES, batch_size)
-    choice = (rng.random(batch_size) * _CLASS_COUNT[labels]).astype(np.int64)
-    pattern = _CLASS_OFFSET[labels] + choice  # uniform pattern within the class
-    num_interior = _PATTERN_INTERIOR[pattern]
-
-    interior = rng.uniform(0.0, 1.0, (batch_size, MAX_INTERIOR))
-    interior[np.arange(MAX_INTERIOR) >= num_interior[:, None]] = 1.0  # unused slots -> x = 1
-    interior.sort(axis=1)
-    edges = np.ones((batch_size, 1))
-    knot_x = np.concatenate((0.0 * edges, interior, edges), axis=1)
-
-    kinds = _PATTERN_KINDS[pattern]
-    knot_y = rng.uniform(BAND_LOW[kinds], BAND_HIGH[kinds])
-
-    g, h = rng.uniform(-1.0, 1.0, (2, batch_size))
-    return FunctionParams(labels, knot_x, knot_y, num_interior, g, h)
-
-
-def evaluate(params: FunctionParams, x: np.ndarray) -> np.ndarray:
-    """Values warp_h(f(warp_g(x))) of every function at the points x, as float32 (batch, len(x))."""
-    u = warp(x[None, :], params.g[:, None])  # precompose
-
-    # Segment index i with knot_x[i] <= u <= knot_x[i + 1]: the number of knots after
-    # the first one that are <= u, capped at the last real segment.
-    i = (u[:, :, None] >= params.knot_x[:, None, 1:]).sum(axis=2)
-    i = np.minimum(i, params.num_interior[:, None])
-
-    x0 = np.take_along_axis(params.knot_x, i, axis=1)
-    x1 = np.take_along_axis(params.knot_x, i + 1, axis=1)
-    y0 = np.take_along_axis(params.knot_y, i, axis=1)
-    y1 = np.take_along_axis(params.knot_y, i + 1, axis=1)
-    f = y0 + (y1 - y0) * smoothstep((u - x0) / (x1 - x0))
-    return warp(f, params.h[:, None]).astype(np.float32)  # postcompose
+    # Segment index i such that knot_x[i] <= u <= knot_x[i + 1].
+    i = np.clip(np.searchsorted(knot_x, u, side="right") - 1, 0, len(knot_x) - 2)
+    t = (u - knot_x[i]) / (knot_x[i + 1] - knot_x[i])
+    f = knot_y[i] + (knot_y[i + 1] - knot_y[i]) * smoothstep(t)
+    return warp(f, h)  # postcompose
 
 
 def generate_batch(
@@ -131,6 +73,11 @@ def generate_batch(
     functions: float32 array (batch_size, num_samples), values at evenly spaced x in [0, 1].
     labels:    int64 array (batch_size,), the number of peaks (each class equally likely).
     """
-    params = sample_params(batch_size, rng)
-    functions = evaluate(params, np.linspace(0.0, 1.0, num_samples))
-    return functions, params.labels.astype(np.int64)
+    x = np.linspace(0.0, 1.0, num_samples)
+    labels = rng.integers(0, NUM_CLASSES, batch_size)
+    functions = np.empty((batch_size, num_samples), dtype=np.float32)
+    for n, label in enumerate(labels):
+        patterns = PATTERNS[label]
+        pattern = patterns[rng.integers(len(patterns))]
+        functions[n] = make_function(pattern, x, rng)
+    return functions, labels.astype(np.int64)
