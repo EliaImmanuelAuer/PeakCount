@@ -27,14 +27,15 @@ class PeakCNN(nn.Module):
     """1D CNN: 6 x (Conv1d -> ReLU) with max pooling after the first 5, then Linear -> 3 logits.
 
     Lengths for 284 samples: 284 -> 280 -> 140 -> 136 -> 68 -> 64 -> 32 -> 28 -> 14
-    -> 10 -> 5 -> 1, so the last conv leaves 1 position x 32 channels, and its
-    receptive field covers all 284 samples.
+    -> 10 -> 5 -> 1, so the last conv leaves 1 position x `channels` channels, and its
+    receptive field covers all 284 samples. Every conv layer has `channels` channels
+    (default 32); a saved model can only be loaded with the channel count it was trained with.
 
     Input:  (batch, num_samples) tensor of function values.
     Output: (batch, 3) tensor of raw logits (use with nn.CrossEntropyLoss).
     """
 
-    def __init__(self, num_samples: int = NUM_SAMPLES):
+    def __init__(self, num_samples: int = NUM_SAMPLES, channels: int = CHANNELS):
         super().__init__()
         if output_length(num_samples) != 1:
             raise ValueError(
@@ -42,22 +43,23 @@ class PeakCNN(nn.Module):
                 f"(gets {output_length(num_samples)}); use {NUM_SAMPLES}"
             )
         self.num_samples = num_samples
+        self.channels = channels
 
         layers = []
         in_channels = 1
         for layer in range(NUM_CONV_LAYERS):
-            layers += [nn.Conv1d(in_channels, CHANNELS, KERNEL_SIZE), nn.ReLU()]
+            layers += [nn.Conv1d(in_channels, channels, KERNEL_SIZE), nn.ReLU()]
             if layer < NUM_CONV_LAYERS - 1:
                 layers.append(nn.MaxPool1d(POOL_SIZE))
-            in_channels = CHANNELS
+            in_channels = channels
         self.features = nn.Sequential(*layers)
-        self.classifier = nn.Linear(CHANNELS, NUM_CLASSES)
+        self.classifier = nn.Linear(channels, NUM_CLASSES)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() != 2 or x.shape[1] != self.num_samples:
             raise ValueError(
                 f"expected input of shape (batch, {self.num_samples}), got {tuple(x.shape)}"
             )
-        h = self.features(x.unsqueeze(1))  # (batch, 32, 1)
-        h = torch.flatten(h, 1)            # (batch, 32)
+        h = self.features(x.unsqueeze(1))  # (batch, channels, 1)
+        h = torch.flatten(h, 1)            # (batch, channels)
         return self.classifier(h)          # (batch, 3)

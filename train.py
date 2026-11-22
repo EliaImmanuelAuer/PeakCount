@@ -23,6 +23,7 @@ FUNCTIONS_PER_EPOCH = 12_800
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
 SEED = 0
+CHANNELS = 32           # conv channels per layer of PeakCNN
 LOSS = "cross_entropy"  # training objective: "cross_entropy" or "focal"
 FOCAL_GAMMA = 2.0       # focusing parameter, only used when LOSS = "focal"
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -39,7 +40,7 @@ def main() -> None:
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
 
-    model = PeakCNN(NUM_SAMPLES).to(device)
+    model = PeakCNN(NUM_SAMPLES, CHANNELS).to(device)
     optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
     steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
 
@@ -57,6 +58,7 @@ def main() -> None:
         "learning_rate": LEARNING_RATE,
         "seed": SEED,
         "num_samples": NUM_SAMPLES,
+        "channels": CHANNELS,
         "loss": LOSS,
         "focal_gamma": FOCAL_GAMMA if LOSS == "focal" else None,
     }
