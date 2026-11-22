@@ -213,24 +213,32 @@ with no drop of more than one percentage point between epochs. See
 
 ### Batch size comparison
 
-Three runs with batch sizes 256, 128 and 64. Everything else matched the third
+Six runs with batch sizes 256 down to 8. Everything else matched the third
 run: 50 epochs × 12,800 warped functions, learning rate 1e-3, seed 0. The
 batch-256 run reproduced the third run exactly (same loss and accuracy in
 every epoch).
 
-| Batch size | Steps | Time | ms per step | Last epoch | Best epoch | ≥ 98% after | ≥ 99% after |
-|---|---|---|---|---|---|---|---|
-| 256 | 2,500 | 8.4 min | 201 | 98.49% | 98.53% | 7.2 min | not reached |
-| 128 | 5,000 | 8.8 min | 106 | 98.77% | 99.00% | 5.7 min | 8.3 min |
-| 64 | 10,000 | 9.7 min | 58 | 99.10% | 99.34% | 4.2 min | 6.2 min |
+| Batch size | Steps | Time | ms per step | Last epoch | Best epoch | ≥ 98% after | ≥ 99% after | After 10 min |
+|---|---|---|---|---|---|---|---|---|
+| 256 | 2,500 | 8.4 min | 201 | 98.49% | 98.53% | 7.2 min | not reached | 98.49% (done) |
+| 128 | 5,000 | 8.8 min | 106 | 98.77% | 99.00% | 5.7 min | 8.3 min | 98.77% (done) |
+| 64 | 10,000 | 9.7 min | 58 | 99.10% | 99.34% | 4.2 min | 6.2 min | 99.10% (done) |
+| 32 | 20,000 | 12.6 min | 38 | 99.52% | 99.53% | 3.4 min | 6.3 min | 99.18% |
+| 16 | 40,000 | 16.8 min | 25 | 99.48% | 99.55% | 2.7 min | 5.9 min | 99.28% |
+| 8 | 80,000 | 26.6 min | 20 | 99.61% | 99.61% | 3.8 min | 9.0 min | 99.01% |
 
-Smaller batches give more updates from the same functions. On the UHD 620, a
-step costs much less with a small batch, so the runs take only a little longer.
-Batch size 64 is ahead both per epoch and per minute of training. Chart:
+Smaller batches give more updates from the same functions, and per epoch they
+learn faster all the way down to batch size 16. Below about 32, the time per
+step hardly shrinks any more (38 → 25 → 20 ms), so the runs get much longer.
+Per minute of training, batch size 16 is ahead. Batch size 8 learns about as
+much per epoch as 16, but is slower per minute. Chart:
 [`comparisons/batch_size.png`](comparisons/batch_size.png). Runs:
 [`runs/2026-11-22_18-46-09/`](runs/2026-11-22_18-46-09/) (256),
 [`runs/2026-11-22_18-54-34/`](runs/2026-11-22_18-54-34/) (128),
-[`runs/2026-11-22_19-03-23/`](runs/2026-11-22_19-03-23/) (64).
+[`runs/2026-11-22_19-03-23/`](runs/2026-11-22_19-03-23/) (64),
+[`runs/2026-11-22_19-25-33/`](runs/2026-11-22_19-25-33/) (32),
+[`runs/2026-11-22_19-38-11/`](runs/2026-11-22_19-38-11/) (16),
+[`runs/2026-11-22_19-55-02/`](runs/2026-11-22_19-55-02/) (8).
 
 ## License
 
