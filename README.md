@@ -203,6 +203,12 @@ minutes), reached 96.65% in its last epoch and 97.04% at best. Its accuracy was
 still rising at the end. See
 [`runs/2026-11-22_17-40-36/`](runs/2026-11-22_17-40-36/).
 
+The third run was the first with the pooled architecture (284 samples, conv +
+max pooling down to one position) and used the same warped data and settings
+(about 8.5 minutes). It reached 98.49% in its last epoch and 98.53% at best,
+with no drop of more than one percentage point between epochs. See
+[`runs/2026-11-22_18-17-39/`](runs/2026-11-22_18-17-39/).
+
 ## License
 
 [MIT](LICENSE)
