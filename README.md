@@ -73,7 +73,7 @@ constants at the top of the file:
 | Epochs | 50 |
 | Functions per epoch | 12,800 (freshly generated) |
 | Batch size | 256 |
-| Optimizer | Adam, learning rate 1e-3 |
+| Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Loss | Cross-entropy |
 | Seed | 0 |
 
@@ -92,7 +92,20 @@ adding one row after every epoch so an interrupted run keeps its log:
 | `functions_seen` | Total number of training functions so far |
 | `timestamp` | Local time when the epoch ended (ISO 8601) |
 
-The logs are committed to the repository. There is no separate evaluation set.
+The logs are committed to the repository.
+
+### Optimizer
+
+`torch.optim.Adam` updates its first moment with `lerp_`. `torch-directml` does
+not implement `lerp`, so that step falls back to the CPU. [`optim.py`](optim.py)
+provides an `Adam` with the same update, computed with `mul_` + `add_` so it
+runs entirely on the GPU. Like `torch.optim.Adam`, it supports `weight_decay`
+(L2 weight decay added to the gradient) and `amsgrad`.
+
+In float64 it matches `torch.optim.Adam` to within about 1e-9 after 200
+training steps. In float32, small rounding differences grow during training,
+so the weights end up slightly different. On the UHD 620 the optimizer step
+takes about 9 ms instead of 23 ms. There is no separate evaluation set.
 Because every function is new, the training accuracy already shows how well
 the model handles unseen functions.
 

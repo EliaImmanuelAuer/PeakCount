@@ -13,6 +13,7 @@ import torch_directml
 
 from data import generate_batch
 from model import NUM_SAMPLES, PeakCNN
+from optim import Adam
 
 EPOCHS = 50
 FUNCTIONS_PER_EPOCH = 12_800
@@ -31,7 +32,7 @@ def main() -> None:
     device = torch_directml.device()
 
     model = PeakCNN(NUM_SAMPLES).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
     loss_fn = nn.CrossEntropyLoss()
     steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
 
