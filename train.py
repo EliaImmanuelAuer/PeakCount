@@ -9,10 +9,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 import torch_directml
 
 from data import generate_batch
+from losses import focal_loss
 from model import NUM_SAMPLES, PeakCNN
 from optim import Adam
 from plot import plot_training_log
@@ -22,20 +23,24 @@ FUNCTIONS_PER_EPOCH = 12_800
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
 SEED = 0
+LOSS = "cross_entropy"  # training objective: "cross_entropy" or "focal"
+FOCAL_GAMMA = 2.0       # focusing parameter, only used when LOSS = "focal"
 PROJECT_DIR = Path(__file__).resolve().parent
 # Each run gets runs/<date>_<time>/ with config.json, model.pt, log.csv and chart.png.
 RUNS_DIR = PROJECT_DIR / "runs"
-LOG_COLUMNS = ["epoch", "loss", "accuracy", "seconds", "functions_seen", "timestamp"]
+# "loss" is always the cross-entropy (comparable across runs); "objective" is the value optimized.
+LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_seen", "timestamp"]
 
 
 def main() -> None:
+    if LOSS not in ("cross_entropy", "focal"):
+        raise ValueError(f"unknown LOSS {LOSS!r}; use 'cross_entropy' or 'focal'")
     torch.manual_seed(SEED)
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
 
     model = PeakCNN(NUM_SAMPLES).to(device)
     optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
-    loss_fn = nn.CrossEntropyLoss()
     steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
 
     run_dir = RUNS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}"
@@ -52,6 +57,8 @@ def main() -> None:
         "learning_rate": LEARNING_RATE,
         "seed": SEED,
         "num_samples": NUM_SAMPLES,
+        "loss": LOSS,
+        "focal_gamma": FOCAL_GAMMA if LOSS == "focal" else None,
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
@@ -63,6 +70,7 @@ def main() -> None:
             model.train()
             start = time.perf_counter()
             total_loss = 0.0
+            total_objective = 0.0
             total_correct = 0
             total_seen = 0
 
@@ -72,13 +80,16 @@ def main() -> None:
                 y = torch.from_numpy(labels).to(device)
 
                 logits = model(x)
-                loss = loss_fn(logits, y)
+                cross_entropy = F.cross_entropy(logits, y)
+                objective = cross_entropy if LOSS == "cross_entropy" else focal_loss(logits, y, FOCAL_GAMMA)
 
                 optimizer.zero_grad()
-                loss.backward()
+                objective.backward()
                 optimizer.step()
 
-                total_loss += loss.item() * len(labels)
+                ce_value, objective_value = torch.stack([cross_entropy, objective]).detach().cpu().tolist()
+                total_loss += ce_value * len(labels)
+                total_objective += objective_value * len(labels)
                 total_correct += (logits.argmax(dim=1) == y).sum().item()
                 total_seen += len(labels)
 
@@ -87,12 +98,14 @@ def main() -> None:
 
             seconds = time.perf_counter() - start
             mean_loss = total_loss / total_seen
+            mean_objective = total_objective / total_seen
             accuracy = total_correct / total_seen
             functions_seen += total_seen
 
             log.writerow([
                 epoch,
                 f"{mean_loss:.6f}",
+                f"{mean_objective:.6f}",
                 f"{accuracy:.6f}",
                 f"{seconds:.3f}",
                 functions_seen,

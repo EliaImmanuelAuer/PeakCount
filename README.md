@@ -97,7 +97,7 @@ constants at the top of the file:
 | Functions per epoch | 12,800 (freshly generated) |
 | Batch size | 64 (256 in runs before the batch size comparison) |
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
-| Loss | Cross-entropy |
+| Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
 
 Each run gets its own folder, named after its start time:
@@ -105,7 +105,7 @@ Each run gets its own folder, named after its start time:
 ```
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
-              learning rate, seed, num_samples)
+              learning rate, seed, num_samples, loss, focal_gamma)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
@@ -118,7 +118,8 @@ progress. The log has these columns:
 | Column | Meaning |
 |---|---|
 | `epoch` | Epoch number, starting at 1 |
-| `loss` | Mean cross-entropy loss over the epoch |
+| `loss` | Mean cross-entropy loss over the epoch, even when training with focal loss, so runs stay comparable |
+| `objective` | Mean of the loss actually optimized (equal to `loss` for cross-entropy runs; missing in runs before focal loss was added) |
 | `accuracy` | Fraction of correctly classified functions (0 to 1) |
 | `seconds` | Duration of the epoch |
 | `functions_seen` | Total number of training functions so far |

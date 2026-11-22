@@ -159,19 +159,24 @@ def spread_labels(positions: list[float], min_gap: float) -> list[float]:
     return result
 
 
-def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: str) -> None:
+def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: str,
+                    labels: list[str] | None = None) -> None:
     """Compare the error rates of up to 6 runs: per epoch (left) and over training minutes (right).
 
     Each run directory must contain config.json and log.csv; runs are labelled by
-    config[setting], e.g. setting="batch_size". Error rates are clamped to 1/n like
+    config[setting], e.g. setting="batch_size", or by the given labels (useful when
+    older runs lack the setting in their config.json). Error rates are clamped to 1/n like
     in plot_training_log. The right chart labels each line at its end; labels that
     would overlap are moved apart and joined to their line end by a thin leader line.
     """
     if not 1 <= len(run_dirs) <= len(RUN_COLORS):
         raise ValueError(f"can compare 1 to {len(RUN_COLORS)} runs, got {len(run_dirs)}")
 
+    if labels is not None and len(labels) != len(run_dirs):
+        raise ValueError(f"got {len(labels)} labels for {len(run_dirs)} runs")
+
     runs = []
-    for run_dir in map(Path, run_dirs):
+    for k, run_dir in enumerate(map(Path, run_dirs)):
         config = json.loads((run_dir / "config.json").read_text())
         with open(run_dir / "log.csv", newline="") as f:
             rows = list(csv.DictReader(f))
@@ -184,8 +189,8 @@ def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: s
             total += float(r["seconds"])
             minutes.append(total / 60)
         runs.append(dict(
-            value=config[setting],
-            label=f"{setting.replace('_', ' ')} {config[setting]}",
+            value=labels[k] if labels is not None else config[setting],
+            label=labels[k] if labels is not None else f"{setting.replace('_', ' ')} {config[setting]}",
             epochs=[int(r["epoch"]) for r in rows],
             minutes=minutes,
             error=[max(e, 1.0 / n) for e, n in zip(raw_error, per_epoch)],
