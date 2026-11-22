@@ -2,6 +2,7 @@
 """Train PeakCNN on the UHD 620 via DirectML, with freshly generated functions every epoch."""
 
 import csv
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +23,8 @@ BATCH_SIZE = 256
 LEARNING_RATE = 1e-3
 SEED = 0
 PROJECT_DIR = Path(__file__).resolve().parent
-RUNS_DIR = PROJECT_DIR / "runs"  # each run gets runs/<date>_<time>/ with model.pt, log.csv, chart.png
+# Each run gets runs/<date>_<time>/ with config.json, model.pt, log.csv and chart.png.
+RUNS_DIR = PROJECT_DIR / "runs"
 LOG_COLUMNS = ["epoch", "loss", "accuracy", "seconds", "functions_seen", "timestamp"]
 
 
@@ -42,6 +44,16 @@ def main() -> None:
     log_path = run_dir / "log.csv"
     chart_path = run_dir / "chart.png"
     functions_seen = 0
+
+    config = {
+        "epochs": EPOCHS,
+        "functions_per_epoch": FUNCTIONS_PER_EPOCH,
+        "batch_size": BATCH_SIZE,
+        "learning_rate": LEARNING_RATE,
+        "seed": SEED,
+        "num_samples": NUM_SAMPLES,
+    }
+    (run_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
     with open(log_path, "w", newline="") as log_file:
         log = csv.writer(log_file)

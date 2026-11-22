@@ -104,6 +104,8 @@ Each run gets its own folder, named after its start time:
 
 ```
 runs/<date>_<time>/
+  config.json training settings (epochs, functions per epoch, batch size,
+              learning rate, seed, num_samples)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
