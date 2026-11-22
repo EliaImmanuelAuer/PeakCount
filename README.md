@@ -8,26 +8,42 @@ outputs three logits, one per class.
 
 ## Model
 
-`PeakCNN` in [`model.py`](model.py) is a small 1D convolutional network:
+`PeakCNN` in [`model.py`](model.py) is a small 1D convolutional network. Conv
+layers and max pooling alternate until a single position with 32 channels is
+left:
 
 | Layer | Output shape |
 |---|---|
-| Input (unsqueezed to 1 channel) | `(batch, 1, 256)` |
-| Conv1d(1 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 252)` |
-| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 248)` |
-| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 244)` |
-| Flatten | `(batch, 7808)` |
-| Linear(7808 → 3) | `(batch, 3)` |
+| Input (unsqueezed to 1 channel) | `(batch, 1, 284)` |
+| Conv1d(1 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 280)` |
+| MaxPool1d(2) | `(batch, 32, 140)` |
+| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 136)` |
+| MaxPool1d(2) | `(batch, 32, 68)` |
+| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 64)` |
+| MaxPool1d(2) | `(batch, 32, 32)` |
+| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 28)` |
+| MaxPool1d(2) | `(batch, 32, 14)` |
+| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 10)` |
+| MaxPool1d(2) | `(batch, 32, 5)` |
+| Conv1d(32 → 32, kernel 5, no padding) + ReLU | `(batch, 32, 1)` |
+| Flatten | `(batch, 32)` |
+| Linear(32 → 3) | `(batch, 3)` |
 
-About 34k parameters, most of them in the final linear layer.
+About 26k parameters. With 284 samples, every step divides evenly, and the last
+conv layer's receptive field covers the whole input.
 
-- **Input:** a tensor of shape `(batch, 256)` holding the function values at 256
+- **Input:** a tensor of shape `(batch, 284)` holding the function values at 284
   sample points. The input is not normalized inside the model.
 - **Output:** raw logits of shape `(batch, 3)` for 0, 1 or 2 peaks. Train with
   `nn.CrossEntropyLoss`.
-- The input length is fixed, because the flattened features feed into a linear
-  layer. `PeakCNN(num_samples=...)` builds a model for a different length, which
-  must then be trained separately.
+- The input length must shrink to exactly one position. `PeakCNN` raises an
+  error for lengths that don't, such as 256.
+
+The two runs from 2026-11-22 (`runs/2026-11-22_16-49-44/` and
+`runs/2026-11-22_17-40-36/`) used an earlier architecture: 256 samples, three
+conv layers without pooling, then flatten → Linear(7808 → 3). Their `model.pt`
+files can only be loaded with the `model.py` from before this change (see the
+git history).
 
 ## Training data
 
@@ -63,7 +79,7 @@ Each function is built from **knots**:
    `1` fixed. Precomposing therefore only shifts the x-positions, and
    postcomposing only distorts the values in `[0, 1]`. All peaks and valleys
    are kept, so the label stays correct.
-6. Sample at 256 evenly spaced points.
+6. Sample at 284 evenly spaced points (256 in the two runs from 2026-11-22).
 
 Knots very close together, or a warping that squeezes a narrow peak further,
 can make a peak disappear between two sample points. The label is still the
@@ -164,7 +180,7 @@ from model import PeakCNN
 device = torch_directml.device()
 
 model = PeakCNN().to(device)
-x = torch.randn(64, 256).to(device)   # 64 functions, 256 samples each
+x = torch.randn(64, 284).to(device)   # 64 functions, 284 samples each
 logits = model(x)                     # (64, 3)
 num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 ```

@@ -4,16 +4,31 @@
 import torch
 import torch.nn as nn
 
-NUM_SAMPLES = 256
+NUM_SAMPLES = 284
 NUM_CLASSES = 3  # 0, 1 or 2 peaks
 
 CHANNELS = 32
 KERNEL_SIZE = 5
-NUM_CONV_LAYERS = 3
+NUM_CONV_LAYERS = 6
+POOL_SIZE = 2
+
+
+def output_length(num_samples: int) -> int:
+    """Length after the conv/pool stack (unpadded convs shorten by KERNEL_SIZE - 1, pools halve)."""
+    length = num_samples
+    for layer in range(NUM_CONV_LAYERS):
+        length -= KERNEL_SIZE - 1
+        if layer < NUM_CONV_LAYERS - 1:
+            length //= POOL_SIZE
+    return length
 
 
 class PeakCNN(nn.Module):
-    """1D CNN: 3 x (Conv1d -> ReLU), no padding, then flatten -> Linear -> 3 logits.
+    """1D CNN: 6 x (Conv1d -> ReLU) with max pooling after the first 5, then Linear -> 3 logits.
+
+    Lengths for 284 samples: 284 -> 280 -> 140 -> 136 -> 68 -> 64 -> 32 -> 28 -> 14
+    -> 10 -> 5 -> 1, so the last conv leaves 1 position x 32 channels, and its
+    receptive field covers all 284 samples.
 
     Input:  (batch, num_samples) tensor of function values.
     Output: (batch, 3) tensor of raw logits (use with nn.CrossEntropyLoss).
@@ -21,24 +36,28 @@ class PeakCNN(nn.Module):
 
     def __init__(self, num_samples: int = NUM_SAMPLES):
         super().__init__()
+        if output_length(num_samples) != 1:
+            raise ValueError(
+                f"num_samples={num_samples} does not shrink to exactly 1 position "
+                f"(gets {output_length(num_samples)}); use {NUM_SAMPLES}"
+            )
         self.num_samples = num_samples
 
         layers = []
         in_channels = 1
-        for _ in range(NUM_CONV_LAYERS):
+        for layer in range(NUM_CONV_LAYERS):
             layers += [nn.Conv1d(in_channels, CHANNELS, KERNEL_SIZE), nn.ReLU()]
+            if layer < NUM_CONV_LAYERS - 1:
+                layers.append(nn.MaxPool1d(POOL_SIZE))
             in_channels = CHANNELS
         self.features = nn.Sequential(*layers)
-
-        # Each unpadded conv shortens the signal by KERNEL_SIZE - 1: 256 -> 244.
-        out_length = num_samples - NUM_CONV_LAYERS * (KERNEL_SIZE - 1)
-        self.classifier = nn.Linear(CHANNELS * out_length, NUM_CLASSES)
+        self.classifier = nn.Linear(CHANNELS, NUM_CLASSES)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() != 2 or x.shape[1] != self.num_samples:
             raise ValueError(
                 f"expected input of shape (batch, {self.num_samples}), got {tuple(x.shape)}"
             )
-        h = self.features(x.unsqueeze(1))  # (batch, 32, 244)
-        h = torch.flatten(h, 1)            # (batch, 7808)
+        h = self.features(x.unsqueeze(1))  # (batch, 32, 1)
+        h = torch.flatten(h, 1)            # (batch, 32)
         return self.classifier(h)          # (batch, 3)
