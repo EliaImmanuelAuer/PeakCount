@@ -22,6 +22,8 @@ EPOCHS = 50
 FUNCTIONS_PER_EPOCH = 12_800
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
+OPTIMIZER = "adam"      # "adam" (optim.Adam, runs fully on DirectML) or "sgd" (torch.optim.SGD)
+SGD_MOMENTUM = 0.9      # only used when OPTIMIZER = "sgd"
 SEED = 0
 CHANNELS = 32           # conv channels per layer of PeakCNN
 LOSS = "cross_entropy"  # training objective: "cross_entropy" or "focal"
@@ -36,12 +38,17 @@ LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_s
 def main() -> None:
     if LOSS not in ("cross_entropy", "focal"):
         raise ValueError(f"unknown LOSS {LOSS!r}; use 'cross_entropy' or 'focal'")
+    if OPTIMIZER not in ("adam", "sgd"):
+        raise ValueError(f"unknown OPTIMIZER {OPTIMIZER!r}; use 'adam' or 'sgd'")
     torch.manual_seed(SEED)
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
 
     model = PeakCNN(NUM_SAMPLES, CHANNELS).to(device)
-    optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+    if OPTIMIZER == "adam":
+        optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+    else:
+        optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE, momentum=SGD_MOMENTUM)
     steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
 
     run_dir = RUNS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}"
@@ -56,6 +63,8 @@ def main() -> None:
         "functions_per_epoch": FUNCTIONS_PER_EPOCH,
         "batch_size": BATCH_SIZE,
         "learning_rate": LEARNING_RATE,
+        "optimizer": OPTIMIZER,
+        "momentum": SGD_MOMENTUM if OPTIMIZER == "sgd" else None,
         "seed": SEED,
         "num_samples": NUM_SAMPLES,
         "channels": CHANNELS,

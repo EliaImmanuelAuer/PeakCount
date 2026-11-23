@@ -99,6 +99,7 @@ constants at the top of the file:
 | Functions per epoch | 12,800 (freshly generated) |
 | Batch size | 64 (256 in runs before the batch size comparison) |
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
+| Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally SGD with momentum (`OPTIMIZER = "sgd"`, `SGD_MOMENTUM`) |
 | Channels per conv layer | 32 (`CHANNELS`) |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
@@ -108,7 +109,8 @@ Each run gets its own folder, named after its start time:
 ```
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
-              learning rate, seed, num_samples, channels, loss, focal_gamma)
+              learning rate, optimizer, momentum, seed, num_samples,
+              channels, loss, focal_gamma)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
