@@ -28,10 +28,15 @@ SEED = 0
 CHANNELS = 32           # conv channels per layer of PeakCNN
 LOSS = "cross_entropy"  # training objective: "cross_entropy" or "focal"
 FOCAL_GAMMA = 2.0       # focusing parameter, only used when LOSS = "focal"
+# Online hard example mining: if set, each step generates OHEM_POOL candidates, scores them
+# without gradients and trains on the BATCH_SIZE candidates with the highest loss. None = off.
+OHEM_POOL = None
 PROJECT_DIR = Path(__file__).resolve().parent
 # Each run gets runs/<date>_<time>/ with config.json, model.pt, log.csv and chart.png.
 RUNS_DIR = PROJECT_DIR / "runs"
 # "loss" is always the cross-entropy (comparable across runs); "objective" is the value optimized.
+# With OHEM, "loss" and "accuracy" are measured over all candidates, "objective" over the trained
+# (selected) functions, and "functions_seen" counts trained functions.
 LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_seen", "timestamp"]
 
 
@@ -40,6 +45,8 @@ def main() -> None:
         raise ValueError(f"unknown LOSS {LOSS!r}; use 'cross_entropy' or 'focal'")
     if OPTIMIZER not in ("adam", "sgd"):
         raise ValueError(f"unknown OPTIMIZER {OPTIMIZER!r}; use 'adam' or 'sgd'")
+    if OHEM_POOL is not None and OHEM_POOL <= BATCH_SIZE:
+        raise ValueError(f"OHEM_POOL ({OHEM_POOL}) must be larger than BATCH_SIZE ({BATCH_SIZE})")
     torch.manual_seed(SEED)
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
@@ -70,6 +77,7 @@ def main() -> None:
         "channels": CHANNELS,
         "loss": LOSS,
         "focal_gamma": FOCAL_GAMMA if LOSS == "focal" else None,
+        "ohem_pool": OHEM_POOL,
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
@@ -80,38 +88,60 @@ def main() -> None:
         for epoch in range(1, EPOCHS + 1):
             model.train()
             start = time.perf_counter()
-            total_loss = 0.0
-            total_objective = 0.0
+            total_loss = 0.0       # cross-entropy summed over all scored functions
+            total_objective = 0.0  # objective summed over the trained functions
             total_correct = 0
-            total_seen = 0
+            total_seen = 0         # scored functions (= trained functions without OHEM)
+            total_trained = 0
 
             for _ in range(steps_per_epoch):
-                functions, labels = generate_batch(BATCH_SIZE, NUM_SAMPLES, rng)
+                functions, labels = generate_batch(OHEM_POOL or BATCH_SIZE, NUM_SAMPLES, rng)
                 x = torch.from_numpy(functions).to(device)
                 y = torch.from_numpy(labels).to(device)
 
-                logits = model(x)
-                cross_entropy = F.cross_entropy(logits, y)
-                objective = cross_entropy if LOSS == "cross_entropy" else focal_loss(logits, y, FOCAL_GAMMA)
+                if OHEM_POOL is not None:
+                    # Score all candidates without gradients, keep the BATCH_SIZE hardest.
+                    with torch.no_grad():
+                        pool_logits = model(x)
+                        pool_losses = F.cross_entropy(pool_logits, y, reduction="none")
+                        pool_correct = (pool_logits.argmax(dim=1) == y).sum()
+                    hardest = torch.topk(pool_losses, BATCH_SIZE).indices
+                    x_train, y_train = x[hardest], y[hardest]
+                else:
+                    x_train, y_train = x, y
+
+                logits = model(x_train)
+                cross_entropy = F.cross_entropy(logits, y_train)
+                if LOSS == "cross_entropy":
+                    objective = cross_entropy
+                else:
+                    objective = focal_loss(logits, y_train, FOCAL_GAMMA)
 
                 optimizer.zero_grad()
                 objective.backward()
                 optimizer.step()
 
-                ce_value, objective_value = torch.stack([cross_entropy, objective]).detach().cpu().tolist()
+                if OHEM_POOL is not None:
+                    ce_value, objective_value = torch.stack(
+                        [pool_losses.mean(), objective.detach()]).cpu().tolist()
+                    total_correct += pool_correct.item()
+                else:
+                    ce_value, objective_value = torch.stack(
+                        [cross_entropy, objective]).detach().cpu().tolist()
+                    total_correct += (logits.argmax(dim=1) == y_train).sum().item()
                 total_loss += ce_value * len(labels)
-                total_objective += objective_value * len(labels)
-                total_correct += (logits.argmax(dim=1) == y).sum().item()
+                total_objective += objective_value * len(y_train)
                 total_seen += len(labels)
+                total_trained += len(y_train)
 
             state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
             torch.save(state, model_path)
 
             seconds = time.perf_counter() - start
             mean_loss = total_loss / total_seen
-            mean_objective = total_objective / total_seen
+            mean_objective = total_objective / total_trained
             accuracy = total_correct / total_seen
-            functions_seen += total_seen
+            functions_seen += total_trained
 
             log.writerow([
                 epoch,

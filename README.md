@@ -101,6 +101,7 @@ constants at the top of the file:
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally SGD with momentum (`OPTIMIZER = "sgd"`, `SGD_MOMENTUM`) |
 | Channels per conv layer | 32 (`CHANNELS`) |
+| Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
 
@@ -110,7 +111,7 @@ Each run gets its own folder, named after its start time:
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
               learning rate, optimizer, momentum, seed, num_samples,
-              channels, loss, focal_gamma)
+              channels, loss, focal_gamma, ohem_pool)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
@@ -125,6 +126,10 @@ progress. The log has these columns:
 | `epoch` | Epoch number, starting at 1 |
 | `loss` | Mean cross-entropy loss over the epoch, even when training with focal loss, so runs stay comparable |
 | `objective` | Mean of the loss actually optimized (equal to `loss` for cross-entropy runs; missing in runs before focal loss was added) |
+
+With OHEM, `loss` and `accuracy` are measured over all scored candidates, so
+they stay comparable with runs without OHEM. `objective` refers to the selected
+(hard) functions, and `functions_seen` counts the functions trained on.
 | `accuracy` | Fraction of correctly classified functions (0 to 1) |
 | `seconds` | Duration of the epoch |
 | `functions_seen` | Total number of training functions so far |
