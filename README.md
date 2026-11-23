@@ -266,30 +266,41 @@ Cross-entropy stays the default. Chart:
 [`comparisons/focal_loss.png`](comparisons/focal_loss.png). Run:
 [`runs/2026-11-22_21-18-41/`](runs/2026-11-22_21-18-41/).
 
-### 16 instead of 32 channels per conv layer
+### Channels per conv layer: 16, 32, 48, 64
 
-A run with 16 channels per conv layer (6,627 instead of 26,051 parameters) and
-otherwise the same settings as the batch-64 run with 32 channels. Both models
-were also evaluated on the same 51,200 fresh warped functions (seed 12345).
+Runs with 16, 48 and 64 channels per conv layer, with otherwise the same
+settings as the batch-64 run with 32 channels (50 epochs each). All models were
+also evaluated with their final weights on the same 51,200 fresh warped
+functions (seed 12345).
 
-| | 32 channels | 16 channels |
-|---|---|---|
-| Parameters | 26,051 | 6,627 |
-| Training time | 9.7 min | 8.7 min |
-| Training accuracy, last epoch | 99.10% | 98.24% |
-| Training accuracy, mean of last 10 epochs | 99.19% | 98.15% |
-| ≥ 98% after | 4.2 min | 7.6 min |
-| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 98.85% (587 wrong) |
-| Missed peaks / extra peaks | 264 / 10 | 431 / 156 |
-| Errors on peaks narrower than 4 samples | 192 | 347 |
-| Extra peaks at a high edge | 10 | 146 |
+| | 16 channels | 32 channels | 48 channels | 64 channels |
+|---|---|---|---|---|
+| Parameters | 6,627 | 26,051 | 58,275 | 103,299 |
+| Training time | 8.7 min | 9.7 min | 12.1 min | 13.8 min |
+| Training accuracy, last epoch | 98.24% | 99.10% | 99.44% | 99.41% |
+| Training accuracy, mean of last 10 epochs | 98.15% | 99.19% | 99.37% | 99.40% |
+| ≥ 98% after | epoch 43 / 7.6 min | epoch 21 / 4.2 min | epoch 14 / 4.3 min | epoch 14 / 4.1 min |
+| ≥ 99% after | not reached | epoch 31 / 6.2 min | epoch 23 / 6.2 min | epoch 25 / 7.3 min |
+| After 10 min (mean of last 5 epochs) | 98.23% (done) | 99.21% (done) | 99.19% (epoch 40) | 99.16% (epoch 34) |
+| Accuracy on 51,200 fresh functions | 98.85% | 99.46% | 99.47% | 99.36% |
+| McNemar vs 32 channels | z = −14.58 | — | z = +0.36 | z = −3.60 |
 
-The 16-channel model makes about twice as many errors, a significant
-difference: 200 functions are wrong for both models, 74 only with 32 channels
-and 387 only with 16 channels (McNemar z = −14.58). It misses narrow peaks more
-often and frequently counts a high edge as a peak again. 32 channels stay the
-default. Chart: [`comparisons/channels.png`](comparisons/channels.png). Run:
-[`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/).
+- **Per epoch**, 48 and 64 channels learn clearly faster than 32: they reach
+  98% after 14 instead of 21 epochs and end about 0.2 points higher.
+- **Per minute** they cost more time per step, so after 10 minutes all three
+  are about equal (99.16–99.21%). 16 channels are clearly worse throughout.
+- **The fresh-data evaluation of the final weights** differs from the training
+  averages. 48 channels equal 32 (n.s.), and 64 channels are even
+  significantly worse. With a constant learning rate, accuracy fluctuates from
+  epoch to epoch (64 channels: 99.0–99.67% in the last 10 epochs), so the
+  final weights are a random snapshot. The McNemar tests compare these
+  snapshots, not the channel counts in general.
+
+32 channels stay the default. Chart:
+[`comparisons/channels.png`](comparisons/channels.png). Runs:
+[`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
+[`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
+[`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
 
 ## License
 
