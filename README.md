@@ -299,7 +299,36 @@ functions (seed 12345).
   snapshots, not the channel counts in general.
 
 32 channels stay the default. Chart:
-[`comparisons/channels.png`](comparisons/channels.png). Runs:
+[`comparisons/channels.png`](comparisons/channels.png).
+
+### Adam vs SGD with momentum
+
+A run with SGD (momentum 0.9) and otherwise the same settings as the batch-64
+Adam run with 32 channels. A short sweep with 2 epochs each picked the
+learning rate: 0.01 was best. At 0.003 SGD barely learned in 2 epochs, at 0.03
+it was unstable, and from 0.1 on it didn't learn at all. Both final models
+were also evaluated on the same 51,200 fresh warped functions (seed 12345).
+
+| | Adam (lr 1e-3) | SGD, momentum 0.9 (lr 0.01) |
+|---|---|---|
+| Training time | 9.7 min | 7.9 min |
+| Accuracy after epoch 2 | 82.5% | 43.4% |
+| ≥ 95% after | epoch 10 / 2.1 min | epoch 14 / 2.1 min |
+| ≥ 98% after | epoch 21 / 4.2 min | epoch 26 / 3.9 min |
+| ≥ 99% after | epoch 31 / 6.2 min | epoch 40 / 6.2 min |
+| Training accuracy, last epoch | 99.10% | 98.88% |
+| Training accuracy, mean of last 10 epochs | 99.19% | 99.02% |
+| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.25% (384 wrong) |
+| Extra peaks at a high edge | 10 | 80 |
+
+SGD starts much more slowly but catches up. Its steps are cheaper (the
+optimizer in `torch.optim` is faster than our `optim.Adam`), so per minute it
+is about as fast as Adam. Per epoch it stays behind. On fresh data its final
+model is significantly worse: 197 functions are wrong for both models, 77
+only with Adam and 187 only with SGD (McNemar z = −6.77). The training
+averages point the same way. Adam stays the default. Chart:
+[`comparisons/optimizer.png`](comparisons/optimizer.png). Run:
+[`runs/2026-11-23_21-00-36/`](runs/2026-11-23_21-00-36/). Runs:
 [`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
 [`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
 [`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).

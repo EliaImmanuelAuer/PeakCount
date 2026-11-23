@@ -1,0 +1,13 @@
+{
+  "epochs": 50,
+  "functions_per_epoch": 12800,
+  "batch_size": 64,
+  "learning_rate": 0.01,
+  "optimizer": "sgd",
+  "momentum": 0.9,
+  "seed": 0,
+  "num_samples": 284,
+  "channels": 32,
+  "loss": "cross_entropy",
+  "focal_gamma": null
+}
