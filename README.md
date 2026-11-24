@@ -405,7 +405,31 @@ the epoch's training batches as the weights change. The loss-guided curve
 therefore looks better in the first epochs and is noisier. Uniform sampling
 stays the default. Chart:
 [`comparisons/loss_guided.png`](comparisons/loss_guided.png). Run:
-[`runs/2026-11-24_12-09-32/`](runs/2026-11-24_12-09-32/). Runs:
+[`runs/2026-11-24_12-09-32/`](runs/2026-11-24_12-09-32/).
+
+### 300 epochs with the defaults
+
+A run with the current defaults (batch 64, 32 channels, Adam with lr 1e-3,
+cross-entropy, uniform sampling, seed 0) for 300 instead of 50 epochs, taking
+52.3 minutes. Its first 50 epochs are identical to the 50-epoch run.
+
+| Epochs | Minutes (end) | Mean accuracy | Range |
+|---|---|---|---|
+| 1–50 | 9.2 | 96.31% | 64.12–99.34% |
+| 51–100 | 18.1 | 99.52% | 99.17–99.75% |
+| 101–150 | 26.6 | 99.69% | 99.50–99.81% |
+| 151–200 | 35.2 | 99.79% | 99.55–99.91% |
+| 201–250 | 43.6 | 99.82% | 99.69–99.95% |
+| 251–300 | 52.3 | 99.84% | 99.63–99.92% |
+
+On the same 51,200 fresh warped functions (seed 12345), the final model reaches
+**99.86% (73 wrong)**, compared with 99.46% (274 wrong) after 50 epochs
+(McNemar z = +11.70) and 99.66% for the 50-epoch loss-guided run (McNemar
+z = +7.23). After 29.9 minutes, the duration of the loss-guided run, it was
+already at 99.81% (mean of 5 epochs). Narrow peaks are now rarely missed (12
+errors instead of 192). Most remaining errors are high edges counted as
+peaks (47 of 73). The accuracy is still rising slowly. Run:
+[`runs/2026-11-24_12-41-02/`](runs/2026-11-24_12-41-02/). Runs:
 [`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
 [`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
 [`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
