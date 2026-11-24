@@ -333,7 +333,36 @@ model is significantly worse: 197 functions are wrong for both models, 77
 only with Adam and 187 only with SGD (McNemar z = −6.77). The training
 averages point the same way. Adam stays the default. Chart:
 [`comparisons/optimizer.png`](comparisons/optimizer.png). Run:
-[`runs/2026-11-23_21-00-36/`](runs/2026-11-23_21-00-36/). Runs:
+[`runs/2026-11-23_21-00-36/`](runs/2026-11-23_21-00-36/).
+
+### Online hard example mining (OHEM)
+
+A run with OHEM: each step scores 128 fresh candidates without gradients and
+trains on the 64 with the highest loss. Otherwise the settings match the
+batch-64 Adam run. Both final models were also evaluated on the same 51,200
+fresh warped functions (seed 12345).
+
+| | Plain training | OHEM, pool 128 |
+|---|---|---|
+| Training time | 9.7 min | 19.0 min |
+| ≥ 95% / 98% / 99% after (epochs) | 10 / 21 / 31 | 9 / 20 / 30 |
+| ≥ 99% after (minutes) | 6.2 min | 11.5 min |
+| Training accuracy, last epoch | 99.10% | 99.48% |
+| Training accuracy, mean of last 10 epochs | 99.19% | 99.34% |
+| After 10 min (mean of last 5 epochs) | 99.21% | 98.40% (epoch 25) |
+| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.47% (271 wrong) |
+| Missed peaks / extra peaks | 264 / 10 | 180 / 91 |
+| Narrow peaks missed (< 4 samples) | 192 | 130 |
+| Extra peaks at a high edge | 10 | 91 |
+
+Per epoch, OHEM learns slightly faster and ends higher in training. Each step
+costs about twice as much, so it is clearly behind per minute. On fresh data
+its final model is as good as the baseline's: 154 functions are wrong for both
+models, 120 only for the baseline and 117 only with OHEM (McNemar z = +0.19).
+OHEM shifts the error types. It misses about a third fewer narrow peaks but
+often counts a high edge as a peak. OHEM stays off by default. Chart:
+[`comparisons/ohem.png`](comparisons/ohem.png). Run:
+[`runs/2026-11-24_11-16-36/`](runs/2026-11-24_11-16-36/). Runs:
 [`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
 [`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
 [`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
