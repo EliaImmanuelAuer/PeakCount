@@ -128,6 +128,11 @@ progress. The log has these columns:
 | `epoch` | Epoch number, starting at 1 |
 | `loss` | Mean cross-entropy loss over the epoch, even when training with focal loss, so runs stay comparable |
 | `objective` | Mean of the loss actually optimized (equal to `loss` for cross-entropy runs; missing in runs before focal loss was added) |
+| `accuracy` | Fraction of correctly classified functions (0 to 1) |
+| `seconds` | Duration of the epoch |
+| `functions_seen` | Total number of training functions so far |
+| `timestamp` | Local time when the epoch ended (ISO 8601) |
+| `predictor_corr` | Loss-guided sampler only: correlation between predicted and actual log-loss (see below) |
 
 With OHEM, `loss` and `accuracy` are measured over all scored candidates, so
 they stay comparable with runs without OHEM. `objective` refers to the selected
@@ -138,10 +143,6 @@ after each epoch, `EVAL_FUNCTIONS` (12,800) fresh uniform functions are scored
 without gradients, and `loss` and `accuracy` come from these. An extra column
 `predictor_corr` holds the correlation between the predicted and the actual
 log-loss on them; it is empty in other runs.
-| `accuracy` | Fraction of correctly classified functions (0 to 1) |
-| `seconds` | Duration of the epoch |
-| `functions_seen` | Total number of training functions so far |
-| `timestamp` | Local time when the epoch ended (ISO 8601) |
 
 After the last epoch, [`plot.py`](plot.py) draws the log as `chart.png`. The
 chart shows loss (left
