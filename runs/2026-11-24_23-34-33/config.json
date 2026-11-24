@@ -1,0 +1,23 @@
+{
+  "epochs": 25,
+  "functions_per_epoch": 25600,
+  "batch_size": 80,
+  "learning_rate": 0.001,
+  "optimizer": "adam",
+  "momentum": null,
+  "sf_warmup_steps": null,
+  "seed": 0,
+  "num_samples": 284,
+  "channels": 32,
+  "loss": "cross_entropy",
+  "focal_gamma": null,
+  "ohem_pool": null,
+  "sampler": "adversarial",
+  "pool_factor": null,
+  "predictor_lr": null,
+  "adversary_lr": 0.01,
+  "adversary_copies": 8,
+  "eval_functions": 12800,
+  "fixed_eval_functions": null,
+  "fixed_eval_seed": null
+}

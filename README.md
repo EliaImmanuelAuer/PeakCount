@@ -101,7 +101,7 @@ constants at the top of the file:
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally Adam with AMSGrad (`"adam_amsgrad"`), Schedule-Free AdamW (`"schedule_free_adamw"`, Defazio et al. 2024, linear warmup over `SF_WARMUP_FRACTION` of all steps; the saved `model.pt` holds its averaged weights x, while the logged training accuracy is measured at its gradient point y) or SGD with momentum (`"sgd"`, `SGD_MOMENTUM`). All run fully on DirectML |
 | Channels per conv layer | 32 (`CHANNELS`) |
-| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, needs `BATCH_SIZE = 10`, see [`adversary.py`](adversary.py)): exactly one parameter tuple per extrema pattern forms the batch of 10. After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands, g and h via tanh), so they always stay valid |
+| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, see [`adversary.py`](adversary.py)): `ADVERSARY_COPIES` parameter tuples per extrema pattern (default 1), each drawn like a normal training function, form the batch (needs `BATCH_SIZE = 10 * ADVERSARY_COPIES`). After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands, g and h via tanh), so they always stay valid |
 | Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
@@ -521,6 +521,40 @@ The run failed. The network won the game against the tuples:
 Uniform sampling stays the default. Run:
 [`runs/2026-11-24_16-19-53/`](runs/2026-11-24_16-19-53/) (see `tuples.png`
 there for the final ten functions).
+
+### Adversarial tuples, 8 per pattern
+
+A second run with the adversarial sampler, now with 8 tuples per extrema pattern
+(`ADVERSARY_COPIES = 8`, batch of 80, each tuple drawn with `sample_params`),
+otherwise with the same settings as the first run: network Adam lr 1e-3,
+tuple ascent Adam lr 1e-2, same backward pass, no guard. 25 epochs of 320 steps
+(8,000 steps, 640,000 functions), 11.1 min.
+
+| | 10 tuples (first run) | 80 tuples |
+|---|---|---|
+| Training steps / functions | 16,000 / 160,000 | 8,000 / 640,000 |
+| Mean loss on the tuples, first → last epoch | 0.27 → < 0.000001 | 0.96 → 0.79 |
+| Tuples with a knot gap < 1 sample, start → end | 0 of 10 → 3 of 10 | 5 of 80 → 58 of 80 |
+| Tuples whose samples show a different peak count than the label, end | — | 16 of 80 |
+| Accuracy on 12,800 uniform functions, last epoch (range) | 46.4% | 43.9% (27.5–51.9%) |
+| Accuracy on 51,200 fresh functions | 46.50% | 43.65% |
+
+This run also failed, but the other way round. With 10 tuples, the network
+memorized them and the ascent stalled. With 80 tuples, the network never gets
+their loss down: it stays near chance (ln 3 ≈ 1.10) for the whole run, also
+for the tuples whose samples still show the right peak count (median 0.85 in
+the last epoch). The tuples keep moving and push their features into corners:
+in the end, 58 of 80 have two knots closer than one sample, and 57 of 80 have
+|g| or |h| above 0.95. 16 of them no longer show their label in the samples at
+all, mostly 2-peak tuples. On fresh data the model mostly predicts 1 or 2 peaks,
+even for functions with 0 peaks (65% of them predicted as 1 peak).
+
+A likely reason why the balance flipped: Adam normalizes each tuple's ascent
+step, so every tuple keeps its full speed however many tuples there are, while
+the network's progress on each single tuple shrinks as its gradient is shared
+across 80 functions. Run:
+[`runs/2026-11-24_23-34-33/`](runs/2026-11-24_23-34-33/) (`tuples.png` shows all
+80 final tuples, one column per pattern).
 
 ### 300 epochs with Schedule-Free AdamW
 
