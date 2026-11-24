@@ -447,7 +447,7 @@ same 51,200 fresh warped functions (seed 12345).
 | Training accuracy, mean of last 10 epochs | 99.19% | 99.10% | 99.36% |
 | Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.19% (416 wrong) | 99.54% (237 wrong) |
 | McNemar vs Adam | — | z = −9.28 | z = +2.78 |
-| Narrow peaks missed (< 4 samples) | 192 | 301 | 165 |
+| Errors on peaks narrower than 4 samples | 192 | 280 | 165 |
 
 Schedule-Free AdamW makes about 13% fewer errors than Adam on fresh data in the
 same time, a significant difference (167 functions wrong for both, 107 only
