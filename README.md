@@ -312,7 +312,10 @@ functions (seed 12345).
   snapshots, not the channel counts in general.
 
 32 channels stay the default. Chart:
-[`comparisons/channels.png`](comparisons/channels.png).
+[`comparisons/channels.png`](comparisons/channels.png). Runs:
+[`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
+[`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
+[`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
 
 ### Adam vs SGD with momentum
 
@@ -458,10 +461,7 @@ Schedule-Free AdamW are measured at its gradient point y, not at the saved
 averaged weights x. Adam stays the default. Chart:
 [`comparisons/adam_variants.png`](comparisons/adam_variants.png). Runs:
 [`runs/2026-11-24_14-39-28/`](runs/2026-11-24_14-39-28/) (AMSGrad),
-[`runs/2026-11-24_14-27-12/`](runs/2026-11-24_14-27-12/) (Schedule-Free AdamW). Runs:
-[`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
-[`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
-[`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
+[`runs/2026-11-24_14-27-12/`](runs/2026-11-24_14-27-12/) (Schedule-Free AdamW).
 
 ## License
 
