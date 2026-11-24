@@ -4,6 +4,7 @@
 import csv
 import json
 import time
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 
@@ -12,11 +13,12 @@ import torch
 import torch.nn.functional as F
 import torch_directml
 
+from adversary import VARIANTS, AdversarialTuples
 from data import generate_batch
 from losses import focal_loss
 from model import NUM_SAMPLES, PeakCNN
 from optim import Adam, ScheduleFreeAdamW
-from plot import plot_training_log
+from plot import plot_training_log, plot_tuples
 from sampler import LossGuidedSampler
 
 EPOCHS = 50
@@ -35,12 +37,15 @@ FOCAL_GAMMA = 2.0       # focusing parameter, only used when LOSS = "focal"
 # Online hard example mining: if set, each step generates OHEM_POOL candidates, scores them
 # without gradients and trains on the BATCH_SIZE candidates with the highest loss. None = off.
 OHEM_POOL = None
-# How training functions are drawn: "uniform" (data.generate_batch) or "loss_guided"
-# (sampler.py: per-class loss predictors pick high-loss parameters from a candidate pool).
+# How training functions are drawn: "uniform" (data.generate_batch), "loss_guided"
+# (sampler.py: per-class loss predictors pick high-loss parameters from a candidate pool) or
+# "adversarial" (adversary.py: one tuple per pattern, the batch of 10, each tuple ascending its
+# loss with Adam; needs BATCH_SIZE = 10).
 SAMPLER = "uniform"
 POOL_FACTOR = 8          # loss_guided: candidates per batch slot
 PREDICTOR_LR = 1e-3      # loss_guided: Adam learning rate of the loss predictors
-EVAL_FUNCTIONS = 12_800  # loss_guided: uniform functions scored after each epoch for the log
+ADVERSARY_LR = 1e-2      # adversarial: Adam learning rate of the tuples' gradient ascent
+EVAL_FUNCTIONS = 12_800  # loss_guided, adversarial: uniform functions scored after each epoch
 PROJECT_DIR = Path(__file__).resolve().parent
 # Each run gets runs/<date>_<time>/ with config.json, model.pt, log.csv and chart.png.
 RUNS_DIR = PROJECT_DIR / "runs"
@@ -49,6 +54,9 @@ RUNS_DIR = PROJECT_DIR / "runs"
 # (selected) functions, and "functions_seen" counts trained functions. With the loss-guided
 # sampler, "loss" and "accuracy" come from EVAL_FUNCTIONS fresh uniform functions scored after
 # each epoch, and "predictor_corr" is the correlation between predicted and actual log-loss there.
+# With the adversarial tuples, "loss" and "accuracy" also come from EVAL_FUNCTIONS fresh uniform
+# functions, and "objective" is the mean loss on the ten tuples during the epoch; the run folder
+# additionally gets tuples.csv (the tuples after every epoch) and tuples.png (the final tuples).
 LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_seen", "timestamp",
                "predictor_corr"]
 
@@ -61,11 +69,15 @@ def main() -> None:
                          "'schedule_free_adamw' or 'sgd'")
     if OHEM_POOL is not None and OHEM_POOL <= BATCH_SIZE:
         raise ValueError(f"OHEM_POOL ({OHEM_POOL}) must be larger than BATCH_SIZE ({BATCH_SIZE})")
-    if SAMPLER not in ("uniform", "loss_guided"):
-        raise ValueError(f"unknown SAMPLER {SAMPLER!r}; use 'uniform' or 'loss_guided'")
+    if SAMPLER not in ("uniform", "loss_guided", "adversarial"):
+        raise ValueError(f"unknown SAMPLER {SAMPLER!r}; use 'uniform', 'loss_guided' or 'adversarial'")
     guided = SAMPLER == "loss_guided"
-    if guided and OHEM_POOL is not None:
-        raise ValueError("OHEM and the loss-guided sampler can't be combined")
+    adversarial = SAMPLER == "adversarial"
+    if (guided or adversarial) and OHEM_POOL is not None:
+        raise ValueError(f"OHEM and the {SAMPLER} sampler can't be combined")
+    if adversarial and BATCH_SIZE != len(VARIANTS):
+        raise ValueError(f"the adversarial sampler trains on its {len(VARIANTS)} tuples; "
+                         f"set BATCH_SIZE = {len(VARIANTS)}")
     torch.manual_seed(SEED)
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
@@ -84,6 +96,9 @@ def main() -> None:
         sampler = LossGuidedSampler(NUM_SAMPLES, device, rng, POOL_FACTOR, PREDICTOR_LR)
         eval_sampler = LossGuidedSampler(NUM_SAMPLES, device, np.random.default_rng(SEED + 1),
                                          POOL_FACTOR, PREDICTOR_LR)  # only its sample_uniform is used
+    if adversarial:
+        tuples = AdversarialTuples(NUM_SAMPLES, device, rng, ADVERSARY_LR)
+        eval_rng = np.random.default_rng(SEED + 1)
 
     run_dir = RUNS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}"
     run_dir.mkdir(parents=True)
@@ -109,13 +124,20 @@ def main() -> None:
         "sampler": SAMPLER,
         "pool_factor": POOL_FACTOR if guided else None,
         "predictor_lr": PREDICTOR_LR if guided else None,
-        "eval_functions": EVAL_FUNCTIONS if guided else None,
+        "adversary_lr": ADVERSARY_LR if adversarial else None,
+        "eval_functions": EVAL_FUNCTIONS if guided or adversarial else None,
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
-    with open(log_path, "w", newline="") as log_file:
+    with open(log_path, "w", newline="") as log_file, ExitStack() as files:
         log = csv.writer(log_file)
         log.writerow(LOG_COLUMNS)
+        if adversarial:
+            tuples_file = files.enter_context(open(run_dir / "tuples.csv", "w", newline=""))
+            tuples_log = csv.writer(tuples_file)
+            tuples_log.writerow(TUPLE_COLUMNS)
+            write_tuples(tuples_log, 0, model, tuples)
+            tuples_file.flush()
 
         for epoch in range(1, EPOCHS + 1):
             model.train()
@@ -127,12 +149,15 @@ def main() -> None:
             total_trained = 0
 
             for _ in range(steps_per_epoch):
-                if guided:
-                    functions, labels, sampler_inputs = sampler.sample_batch(BATCH_SIZE)
+                if adversarial:
+                    x, y, labels = tuples.functions(), tuples.labels_device, tuples.labels
                 else:
-                    functions, labels = generate_batch(OHEM_POOL or BATCH_SIZE, NUM_SAMPLES, rng)
-                x = torch.from_numpy(functions).to(device)
-                y = torch.from_numpy(labels).to(device)
+                    if guided:
+                        functions, labels, sampler_inputs = sampler.sample_batch(BATCH_SIZE)
+                    else:
+                        functions, labels = generate_batch(OHEM_POOL or BATCH_SIZE, NUM_SAMPLES, rng)
+                    x = torch.from_numpy(functions).to(device)
+                    y = torch.from_numpy(labels).to(device)
 
                 if OHEM_POOL is not None:
                     # Score all candidates without gradients, keep the BATCH_SIZE hardest.
@@ -157,8 +182,12 @@ def main() -> None:
                     objective = focal_loss(logits, y_train, FOCAL_GAMMA)
 
                 optimizer.zero_grad()
-                objective.backward()
+                if adversarial:
+                    tuples.zero_grad()
+                objective.backward()  # adversarial: also the tuples' gradients, at the same state
                 optimizer.step()
+                if adversarial:
+                    tuples.ascent_step()  # Adam step on the tuples that increases the objective
                 if guided:  # predictor targets: the losses from before this CNN update
                     sampler.update(per_function, sampler_inputs)
 
@@ -185,6 +214,10 @@ def main() -> None:
                 # The sampled batches are deliberately hard, so log fresh uniform functions instead.
                 mean_loss, accuracy, predictor_corr = evaluate_uniform(model, sampler, eval_sampler, device)
                 predictor_corr = f"{predictor_corr:.4f}"
+            if adversarial:
+                mean_loss, accuracy = evaluate_fresh(model, eval_rng, device)
+                write_tuples(tuples_log, epoch, model, tuples)
+                tuples_file.flush()
 
             state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
             torch.save(state, model_path)
@@ -214,7 +247,45 @@ def main() -> None:
             )
 
     plot_training_log(log_path, chart_path)
+    if adversarial:
+        final_losses = tuple_losses(model, tuples)
+        plot_tuples(tuples.params(), final_losses, NUM_SAMPLES, run_dir / "tuples.png",
+                    f"Adversarial tuples after epoch {EPOCHS}")
     print(f"saved weights, training log and chart to {run_dir}")
+
+
+# tuples.csv: one row per tuple and epoch (epoch 0 = the initial tuples); knot positions and
+# values are space-separated, edges included; "loss" is the tuple's cross-entropy at that point.
+TUPLE_COLUMNS = ["epoch", "variant", "pattern", "label", "loss", "knot_x", "knot_y", "g", "h"]
+
+
+def tuple_losses(model, tuples) -> list[float]:
+    """Current per-tuple cross-entropy (no gradients)."""
+    with torch.no_grad():
+        return F.cross_entropy(model(tuples.functions()), tuples.labels_device, reduction="none").cpu().tolist()
+
+
+def write_tuples(writer, epoch: int, model, tuples) -> None:
+    for k, (p, label, loss) in enumerate(zip(tuples.params(), tuples.labels, tuple_losses(model, tuples))):
+        writer.writerow([epoch, k, p.pattern, int(label), f"{loss:.6g}",
+                         " ".join(f"{v:.9g}" for v in p.knot_x), " ".join(f"{v:.9g}" for v in p.knot_y),
+                         f"{p.g:.9g}", f"{p.h:.9g}"])
+
+
+def evaluate_fresh(model, rng, device, chunk: int = 1024):
+    """Mean cross-entropy and accuracy on EVAL_FUNCTIONS fresh uniform functions from rng."""
+    total_loss, total_correct = 0.0, 0
+    with torch.no_grad():
+        for start in range(0, EVAL_FUNCTIONS, chunk):
+            functions, labels = generate_batch(min(chunk, EVAL_FUNCTIONS - start), NUM_SAMPLES, rng)
+            x = torch.from_numpy(functions).to(device)
+            y = torch.from_numpy(labels).to(device)
+            logits = model(x)
+            stats = torch.stack([F.cross_entropy(logits, y, reduction="sum"),
+                                 (logits.argmax(dim=1) == y).sum().float()]).cpu().tolist()
+            total_loss += stats[0]
+            total_correct += int(stats[1])
+    return total_loss / EVAL_FUNCTIONS, total_correct / EVAL_FUNCTIONS
 
 
 def evaluate_uniform(model, sampler, eval_sampler, device, chunk: int = 1024):

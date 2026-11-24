@@ -3,6 +3,7 @@
 
 plot_training_log: loss and error rate (1 - accuracy) per epoch of one run; used by
 train.py after training. plot_comparison: error rates of several runs side by side.
+plot_tuples: the functions of the adversarial tuples (adversary.py) with their samples.
 Not meant to be run on its own.
 """
 
@@ -263,4 +264,51 @@ def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: s
             text.set_color(TEXT_SECONDARY)
 
         fig.subplots_adjust(left=0.07, right=0.98, top=0.72, bottom=0.12, wspace=0.08)
+        fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
+
+
+def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: Path, title: str) -> None:
+    """Draw the adversarial tuples (data.FunctionParams, one panel each) and save a PNG.
+
+    Each panel shows the function at fine resolution (line) and at the network's num_samples
+    sample points (dots), so features that fall between samples are visible. The faint
+    horizontal lines at 1/3 and 2/3 are the borders of the valley, edge and peak bands.
+    """
+    import numpy as np  # local imports: only needed here
+    from data import evaluate_params
+
+    fine = np.linspace(0.0, 1.0, 4000)
+    grid = np.linspace(0.0, 1.0, num_samples)
+    cols = 5
+    rows = math.ceil(len(params) / cols)
+    with rc_context(RC):
+        fig = Figure(figsize=(13, 2.6 * rows + 0.8), dpi=150, facecolor=SURFACE)
+        axes = fig.subplots(rows, cols, sharex=True, sharey=True, squeeze=False).ravel()
+        for ax, p, loss in zip(axes, params, losses):
+            ax.set_facecolor(SURFACE)
+            for band in (1 / 3, 2 / 3):
+                ax.axhline(band, color=GRIDLINE, linewidth=1, zorder=0)
+            ax.scatter(grid, evaluate_params(p, grid), s=5, color=TEXT_MUTED, linewidths=0, zorder=2)
+            ax.plot(fine, evaluate_params(p, fine), color=LOSS_COLOR, linewidth=1,
+                    solid_capstyle="round", zorder=3)
+            peaks = p.pattern.count("P")
+            ax.set_title(f"{p.pattern or '(none)'}  ·  {peaks} peak{'s' if peaks != 1 else ''}  ·  "
+                         f"loss {loss:.3g}", fontsize=9, color=TEXT_SECONDARY, loc="left")
+            ax.set_xlim(0, 1)
+            ax.set_ylim(-0.02, 1.02)
+            ax.set_xticks([0, 0.5, 1], labels=["0", "0.5", "1"])
+            ax.set_yticks([0, 1 / 3, 2 / 3, 1], labels=["0", "1/3", "2/3", "1"])
+            for side in ("top", "right"):
+                ax.spines[side].set_visible(False)
+            for side in ("left", "bottom"):
+                ax.spines[side].set_color(AXIS)
+            ax.tick_params(colors=AXIS, labelcolor=TEXT_MUTED, length=0, pad=4)
+        for ax in axes[len(params):]:
+            ax.set_visible(False)
+        fig.suptitle(title, x=0.06, y=0.99, ha="left", fontsize=13, fontweight="semibold", color=TEXT_PRIMARY)
+        fig.text(0.06, 0.93 if rows > 1 else 0.88,
+                 f"blue line: function at fine resolution  ·  gray dots: the {num_samples} samples the network sees",
+                 ha="left", fontsize=9, color=TEXT_SECONDARY)
+        fig.subplots_adjust(left=0.06, right=0.99, top=0.85 if rows > 1 else 0.72, bottom=0.08,
+                            wspace=0.12, hspace=0.35)
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
