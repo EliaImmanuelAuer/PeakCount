@@ -280,7 +280,7 @@ warped functions (seed 12345).
 | Training accuracy, mean of last 10 epochs | 99.19% | 99.16% |
 | ≥ 99% after | 6.2 min | 6.9 min |
 | Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.45% (281 wrong) |
-| Errors on peaks narrower than 4 samples | 192 | 175 |
+| Narrow peaks missed (< 4 samples) | 190 | 170 |
 
 The difference is not significant. 194 functions are wrong for both models,
 80 only for cross-entropy and 87 only for focal loss (McNemar z = −0.54).
@@ -371,7 +371,7 @@ fresh warped functions (seed 12345).
 | After 10 min (mean of last 5 epochs) | 99.21% | 98.40% (epoch 25) |
 | Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.47% (271 wrong) |
 | Missed peaks / extra peaks | 264 / 10 | 180 / 91 |
-| Narrow peaks missed (< 4 samples) | 192 | 130 |
+| Narrow peaks missed (< 4 samples) | 190 | 125 |
 | Extra peaks at a high edge | 10 | 91 |
 
 Per epoch, OHEM learns slightly faster and ends higher in training. Each step
@@ -399,13 +399,13 @@ run with uniform sampling. Both final models were also evaluated on the same
 | Accuracy, mean of last 10 epochs | 99.19% | 99.47% |
 | Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.66% (174 wrong) |
 | Missed peaks / extra peaks | 264 / 10 | 113 / 61 |
-| Narrow peaks missed (< 4 samples) | 192 | 88 |
+| Narrow peaks missed (< 4 samples) | 190 | 55 |
 | Predictor correlation (epoch 1 → 50) | — | 0.57 → 0.83 |
 
 The loss-guided model makes about a third fewer errors on fresh data, a
 significant difference: 86 functions are wrong for both models, 188 only with
 uniform sampling and 88 only with loss-guided sampling (McNemar z = +6.02). It
-misses fewer than half as many narrow peaks, but counts a high edge as a peak
+misses less than a third as many narrow peaks, but counts a high edge as a peak
 more often (56 instead of 10). Drawing and scoring the candidate pool in Python
 makes each step about three times as expensive, so per minute it is clearly
 behind.
@@ -437,8 +437,8 @@ On the same 51,200 fresh warped functions (seed 12345), the final model reaches
 **99.86% (73 wrong)**, compared with 99.46% (274 wrong) after 50 epochs
 (McNemar z = +11.70) and 99.66% for the 50-epoch loss-guided run (McNemar
 z = +7.23). After 29.9 minutes, the duration of the loss-guided run, it was
-already at 99.81% (mean of 5 epochs). Narrow peaks are now rarely missed (12
-errors instead of 192). Most remaining errors are high edges counted as
+already at 99.81% (mean of 5 epochs). Narrow peaks are now rarely missed (15
+instead of 190). Most remaining errors are high edges counted as
 peaks (47 of 73). The accuracy is still rising slowly. Run:
 [`runs/2026-11-24_12-41-02/`](runs/2026-11-24_12-41-02/).
 
@@ -458,7 +458,7 @@ same 51,200 fresh warped functions (seed 12345).
 | Training accuracy, mean of last 10 epochs | 99.19% | 99.10% | 99.36% |
 | Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.19% (416 wrong) | 99.54% (237 wrong) |
 | McNemar vs Adam | — | z = −9.28 | z = +2.78 |
-| Errors on peaks narrower than 4 samples | 192 | 280 | 165 |
+| Narrow peaks missed (< 4 samples) | 190 | 280 | 162 |
 
 Schedule-Free AdamW makes about 13% fewer errors than Adam on fresh data in the
 same time, a significant difference (167 functions wrong for both, 107 only
