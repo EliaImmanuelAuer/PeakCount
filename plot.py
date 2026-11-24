@@ -4,6 +4,7 @@
 plot_training_log: loss and error rate (1 - accuracy) per epoch of one run; used by
 train.py after training. plot_comparison: error rates of several runs side by side.
 plot_tuples: the functions of the adversarial tuples (adversary.py) with their samples.
+plot_fixed_eval: loss and error rate per epoch on train.py's fixed evaluation set.
 Not meant to be run on its own.
 """
 
@@ -311,4 +312,87 @@ def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: P
                  ha="left", fontsize=9, color=TEXT_SECONDARY)
         fig.subplots_adjust(left=0.06, right=0.99, top=0.85 if rows > 1 else 0.72, bottom=0.08,
                             wspace=0.12, hspace=0.35)
+        fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
+
+
+def plot_fixed_eval(curves: list[tuple[Path, str, str, str]], png_path: Path, title: str) -> None:
+    """Loss (left) and error rate (right) per epoch on the fixed evaluation set, for up to 6 curves.
+
+    curves: (run dir, version, legend label, short label for the line ends); version "" reads fixed_loss / fixed_accuracy, "x" reads
+    fixed_loss_x / fixed_accuracy_x, and so on (train.FIXED_EVAL_FUNCTIONS). Both panels are
+    logarithmic; an epoch without errors is shown as one error (1/n for the n fixed functions).
+    """
+    if not 1 <= len(curves) <= len(RUN_COLORS):
+        raise ValueError(f"can draw 1 to {len(RUN_COLORS)} curves, got {len(curves)}")
+    data = []
+    for run_dir, version, label, short in curves:
+        run_dir = Path(run_dir)
+        n = json.loads((run_dir / "config.json").read_text())["fixed_eval_functions"]
+        with open(run_dir / "log.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        suffix = f"_{version}" if version else ""
+        loss = [float(r[f"fixed_loss{suffix}"]) for r in rows]
+        raw_error = [1.0 - float(r[f"fixed_accuracy{suffix}"]) for r in rows]
+        data.append(dict(label=label, short=short, epochs=[int(r["epoch"]) for r in rows], loss=loss,
+                         error=[max(e, 1.0 / n) for e in raw_error], final_error=raw_error[-1], n=n))
+
+    with rc_context(RC):
+        fig = Figure(figsize=(11, 4.8), dpi=150, facecolor=SURFACE)
+        ax_loss, ax_err = fig.subplots(1, 2)
+        handles = []
+        for d, color in zip(data, RUN_COLORS):
+            style = dict(color=color, linewidth=1.5, solid_capstyle="round", solid_joinstyle="round")
+            (line,) = ax_loss.plot(d["epochs"], d["loss"], **style,
+                                   label=f"{d['label']}  ·  final loss {d['loss'][-1]:.4f}, "
+                                         f"error {100 * d['final_error']:.2f}%")
+            ax_err.plot(d["epochs"], d["error"], **style)
+            handles.append(line)
+
+        for ax, key, fmt, ylabel in ((ax_loss, "loss", plain_decimal, "Loss (cross-entropy, log scale)"),
+                                     (ax_err, "error", plain_percent, "Error rate 1 − accuracy (log scale)")):
+            lo, hi = decade_range([v for d in data for v in d[key]])
+            ax.set_yscale("log")
+            ax.set_ylim(10.0**lo, 10.0**hi)
+            ax.yaxis.set_major_locator(LogLocator(base=10, numticks=hi - lo + 2))
+            ax.yaxis.set_major_formatter(FuncFormatter(fmt))
+            ax.yaxis.set_minor_formatter(NullFormatter())
+            ax.set_xlim(1, max(d["epochs"][-1] for d in data))
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.set_xlabel("Epoch", color=TEXT_SECONDARY)
+            ax.set_ylabel(ylabel, color=TEXT_SECONDARY)
+            ax.set_facecolor(SURFACE)
+            ax.grid(axis="y", which="major", color=GRIDLINE, linewidth=1)
+            ax.set_axisbelow(True)
+            for side in ("top", "right"):
+                ax.spines[side].set_visible(False)
+            for side in ("left", "bottom"):
+                ax.spines[side].set_color(AXIS)
+                ax.spines[side].set_linewidth(1)
+            ax.tick_params(which="both", colors=AXIS, labelcolor=TEXT_MUTED, length=0, pad=6)
+
+            # Direct labels at the line ends, spread apart where they would collide.
+            natural = [(math.log10(d[key][-1]) - lo) / (hi - lo) for d in data]
+            placed = spread_labels(natural, LABEL_MIN_GAP)
+            x_end = max(d["epochs"][-1] for d in data)
+            for d, y_nat, y_lab in zip(data, natural, placed):
+                moved = abs(y_lab - y_nat) > 1e-9
+                ax.annotate(d["short"], xy=(d["epochs"][-1], d[key][-1]),
+                            xytext=(x_end * 1.015, y_lab), textcoords=("data", "axes fraction"),
+                            va="center", ha="left", fontsize=9, color=TEXT_SECONDARY,
+                            annotation_clip=False, zorder=5,
+                            bbox=dict(boxstyle="square,pad=0.15", facecolor=SURFACE, edgecolor="none"),
+                            arrowprops=dict(arrowstyle="-", color=TEXT_MUTED, linewidth=0.8,
+                                            shrinkA=0, shrinkB=2) if moved else None)
+
+        fig.suptitle(title, x=0.06, y=0.97, ha="left", fontsize=13, fontweight="semibold",
+                     color=TEXT_PRIMARY)
+        runs = sorted({Path(c[0]).name for c in curves})
+        fig.text(0.06, 0.905, f"the same {data[0]['n']:,} functions after every epoch  ·  runs "
+                 + ", ".join(runs), ha="left", fontsize=9, color=TEXT_SECONDARY)
+        legend = ax_loss.legend(handles=handles, loc="lower left", bbox_to_anchor=(0, 1.01),
+                                ncol=2, frameon=False, borderaxespad=0, handlelength=1.6,
+                                columnspacing=2.0)
+        for text in legend.get_texts():
+            text.set_color(TEXT_SECONDARY)
+        fig.subplots_adjust(left=0.06, right=0.94, top=0.72, bottom=0.12, wspace=0.32)
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
