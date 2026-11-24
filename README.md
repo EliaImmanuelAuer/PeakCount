@@ -543,9 +543,11 @@ functions whose label doesn't match the samples, 18 are missed narrow peaks and
 The training accuracies of Schedule-Free AdamW are measured at the gradient
 point y. There it is only slightly ahead of Adam, while its averaged weights x
 are clearly better on fresh data (0.05% vs 0.14% error). The epochs took 12.1 s
-on average instead of about 11 s in the 50-epoch run, so the run took 60.5
-instead of the expected 55 minutes; per epoch the optimizers cost about the
-same. Chart:
+on average, compared with 10.9 s in the 50-epoch Schedule-Free run and 10.5 s
+in the 300-epoch Adam run, so the run took 60.5 instead of the expected 55
+minutes. Per minute, Schedule-Free is still ahead: after 52.3 minutes (the
+length of the Adam run) its training accuracy averaged 99.89% over the last 5
+epochs, vs 99.86% for Adam. Chart:
 [`comparisons/schedule_free_300.png`](comparisons/schedule_free_300.png). Run:
 [`runs/2026-11-24_16-48-22/`](runs/2026-11-24_16-48-22/).
 
