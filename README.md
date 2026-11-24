@@ -101,6 +101,7 @@ constants at the top of the file:
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally SGD with momentum (`OPTIMIZER = "sgd"`, `SGD_MOMENTUM`) |
 | Channels per conv layer | 32 (`CHANNELS`) |
+| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss |
 | Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
@@ -111,7 +112,8 @@ Each run gets its own folder, named after its start time:
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
               learning rate, optimizer, momentum, seed, num_samples,
-              channels, loss, focal_gamma, ohem_pool)
+              channels, loss, focal_gamma, ohem_pool, sampler,
+              pool_factor, predictor_lr, eval_functions)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
@@ -130,6 +132,12 @@ progress. The log has these columns:
 With OHEM, `loss` and `accuracy` are measured over all scored candidates, so
 they stay comparable with runs without OHEM. `objective` refers to the selected
 (hard) functions, and `functions_seen` counts the functions trained on.
+
+With the loss-guided sampler, the training batches are deliberately hard. So
+after each epoch, `EVAL_FUNCTIONS` (12,800) fresh uniform functions are scored
+without gradients, and `loss` and `accuracy` come from these. An extra column
+`predictor_corr` holds the correlation between the predicted and the actual
+log-loss on them; it is empty in other runs.
 | `accuracy` | Fraction of correctly classified functions (0 to 1) |
 | `seconds` | Duration of the epoch |
 | `functions_seen` | Total number of training functions so far |

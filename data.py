@@ -22,6 +22,8 @@ Knots are not required to keep a minimum distance, so very close knots can make
 a peak invisible on the sample grid; the label is still the intended class.
 """
 
+from typing import NamedTuple
+
 import numpy as np
 
 NUM_CLASSES = 3
@@ -47,8 +49,18 @@ def warp(x: np.ndarray, c: float) -> np.ndarray:
     return x * (c * (x - 1.0) + 1.0)
 
 
-def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """Sample one function with the given interior extrema pattern at the points x."""
+class FunctionParams(NamedTuple):
+    """Random parameters of one function."""
+
+    pattern: str        # interior extrema, e.g. "VPV"
+    knot_x: np.ndarray  # sorted knot positions, including the edges 0 and 1
+    knot_y: np.ndarray  # knot values
+    g: float            # precomposition warp parameter
+    h: float            # postcomposition warp parameter
+
+
+def sample_params(pattern: str, rng: np.random.Generator) -> FunctionParams:
+    """Draw the random parameters of one function with the given interior extrema pattern."""
     interior_x = np.sort(rng.uniform(0.0, 1.0, len(pattern)))
     knot_x = np.concatenate(([0.0], interior_x, [1.0]))
 
@@ -56,13 +68,24 @@ def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.n
     knot_y = np.array([rng.uniform(lo, hi) for lo, hi in bands])
 
     g, h = rng.uniform(-1.0, 1.0, 2)
-    u = warp(x, g)  # precompose: evaluate the knot curve at warp_g(x)
+    return FunctionParams(pattern, knot_x, knot_y, float(g), float(h))
+
+
+def evaluate_params(params: FunctionParams, x: np.ndarray) -> np.ndarray:
+    """Values warp_h(f(warp_g(x))) of the function with the given parameters at the points x."""
+    knot_x, knot_y = params.knot_x, params.knot_y
+    u = warp(x, params.g)  # precompose: evaluate the knot curve at warp_g(x)
 
     # Segment index i such that knot_x[i] <= u <= knot_x[i + 1].
     i = np.clip(np.searchsorted(knot_x, u, side="right") - 1, 0, len(knot_x) - 2)
     t = (u - knot_x[i]) / (knot_x[i + 1] - knot_x[i])
     f = knot_y[i] + (knot_y[i + 1] - knot_y[i]) * smoothstep(t)
-    return warp(f, h)  # postcompose
+    return warp(f, params.h)  # postcompose
+
+
+def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Sample one function with the given interior extrema pattern at the points x."""
+    return evaluate_params(sample_params(pattern, rng), x)
 
 
 def generate_batch(

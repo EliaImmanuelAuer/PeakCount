@@ -17,6 +17,7 @@ from losses import focal_loss
 from model import NUM_SAMPLES, PeakCNN
 from optim import Adam
 from plot import plot_training_log
+from sampler import LossGuidedSampler
 
 EPOCHS = 50
 FUNCTIONS_PER_EPOCH = 12_800
@@ -31,13 +32,22 @@ FOCAL_GAMMA = 2.0       # focusing parameter, only used when LOSS = "focal"
 # Online hard example mining: if set, each step generates OHEM_POOL candidates, scores them
 # without gradients and trains on the BATCH_SIZE candidates with the highest loss. None = off.
 OHEM_POOL = None
+# How training functions are drawn: "uniform" (data.generate_batch) or "loss_guided"
+# (sampler.py: per-class loss predictors pick high-loss parameters from a candidate pool).
+SAMPLER = "uniform"
+POOL_FACTOR = 8          # loss_guided: candidates per batch slot
+PREDICTOR_LR = 1e-3      # loss_guided: Adam learning rate of the loss predictors
+EVAL_FUNCTIONS = 12_800  # loss_guided: uniform functions scored after each epoch for the log
 PROJECT_DIR = Path(__file__).resolve().parent
 # Each run gets runs/<date>_<time>/ with config.json, model.pt, log.csv and chart.png.
 RUNS_DIR = PROJECT_DIR / "runs"
 # "loss" is always the cross-entropy (comparable across runs); "objective" is the value optimized.
 # With OHEM, "loss" and "accuracy" are measured over all candidates, "objective" over the trained
-# (selected) functions, and "functions_seen" counts trained functions.
-LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_seen", "timestamp"]
+# (selected) functions, and "functions_seen" counts trained functions. With the loss-guided
+# sampler, "loss" and "accuracy" come from EVAL_FUNCTIONS fresh uniform functions scored after
+# each epoch, and "predictor_corr" is the correlation between predicted and actual log-loss there.
+LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_seen", "timestamp",
+               "predictor_corr"]
 
 
 def main() -> None:
@@ -47,6 +57,11 @@ def main() -> None:
         raise ValueError(f"unknown OPTIMIZER {OPTIMIZER!r}; use 'adam' or 'sgd'")
     if OHEM_POOL is not None and OHEM_POOL <= BATCH_SIZE:
         raise ValueError(f"OHEM_POOL ({OHEM_POOL}) must be larger than BATCH_SIZE ({BATCH_SIZE})")
+    if SAMPLER not in ("uniform", "loss_guided"):
+        raise ValueError(f"unknown SAMPLER {SAMPLER!r}; use 'uniform' or 'loss_guided'")
+    guided = SAMPLER == "loss_guided"
+    if guided and OHEM_POOL is not None:
+        raise ValueError("OHEM and the loss-guided sampler can't be combined")
     torch.manual_seed(SEED)
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
@@ -57,6 +72,10 @@ def main() -> None:
     else:
         optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE, momentum=SGD_MOMENTUM)
     steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
+    if guided:
+        sampler = LossGuidedSampler(NUM_SAMPLES, device, rng, POOL_FACTOR, PREDICTOR_LR)
+        eval_sampler = LossGuidedSampler(NUM_SAMPLES, device, np.random.default_rng(SEED + 1),
+                                         POOL_FACTOR, PREDICTOR_LR)  # only its sample_uniform is used
 
     run_dir = RUNS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}"
     run_dir.mkdir(parents=True)
@@ -78,6 +97,10 @@ def main() -> None:
         "loss": LOSS,
         "focal_gamma": FOCAL_GAMMA if LOSS == "focal" else None,
         "ohem_pool": OHEM_POOL,
+        "sampler": SAMPLER,
+        "pool_factor": POOL_FACTOR if guided else None,
+        "predictor_lr": PREDICTOR_LR if guided else None,
+        "eval_functions": EVAL_FUNCTIONS if guided else None,
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
@@ -95,7 +118,10 @@ def main() -> None:
             total_trained = 0
 
             for _ in range(steps_per_epoch):
-                functions, labels = generate_batch(OHEM_POOL or BATCH_SIZE, NUM_SAMPLES, rng)
+                if guided:
+                    functions, labels, sampler_inputs = sampler.sample_batch(BATCH_SIZE)
+                else:
+                    functions, labels = generate_batch(OHEM_POOL or BATCH_SIZE, NUM_SAMPLES, rng)
                 x = torch.from_numpy(functions).to(device)
                 y = torch.from_numpy(labels).to(device)
 
@@ -111,7 +137,11 @@ def main() -> None:
                     x_train, y_train = x, y
 
                 logits = model(x_train)
-                cross_entropy = F.cross_entropy(logits, y_train)
+                if guided:
+                    per_function = F.cross_entropy(logits, y_train, reduction="none")
+                    cross_entropy = per_function.mean()
+                else:
+                    cross_entropy = F.cross_entropy(logits, y_train)
                 if LOSS == "cross_entropy":
                     objective = cross_entropy
                 else:
@@ -120,6 +150,8 @@ def main() -> None:
                 optimizer.zero_grad()
                 objective.backward()
                 optimizer.step()
+                if guided:  # predictor targets: the losses from before this CNN update
+                    sampler.update(per_function, sampler_inputs)
 
                 if OHEM_POOL is not None:
                     ce_value, objective_value = torch.stack(
@@ -134,13 +166,19 @@ def main() -> None:
                 total_seen += len(labels)
                 total_trained += len(y_train)
 
+            mean_loss = total_loss / total_seen
+            mean_objective = total_objective / total_trained
+            accuracy = total_correct / total_seen
+            predictor_corr = ""
+            if guided:
+                # The sampled batches are deliberately hard, so log fresh uniform functions instead.
+                mean_loss, accuracy, predictor_corr = evaluate_uniform(model, sampler, eval_sampler, device)
+                predictor_corr = f"{predictor_corr:.4f}"
+
             state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
             torch.save(state, model_path)
 
             seconds = time.perf_counter() - start
-            mean_loss = total_loss / total_seen
-            mean_objective = total_objective / total_trained
-            accuracy = total_correct / total_seen
             functions_seen += total_trained
 
             log.writerow([
@@ -151,6 +189,7 @@ def main() -> None:
                 f"{seconds:.3f}",
                 functions_seen,
                 datetime.now().isoformat(timespec="seconds"),
+                predictor_corr,
             ])
             log_file.flush()
 
@@ -163,6 +202,27 @@ def main() -> None:
 
     plot_training_log(log_path, chart_path)
     print(f"saved weights, training log and chart to {run_dir}")
+
+
+def evaluate_uniform(model, sampler, eval_sampler, device, chunk: int = 1024):
+    """Mean cross-entropy and accuracy of the model on EVAL_FUNCTIONS fresh uniform functions,
+    and the correlation between the sampler's predicted and the actual log-loss on them."""
+    total_loss, total_correct, predicted, actual = 0.0, 0, [], []
+    with torch.no_grad():
+        for start in range(0, EVAL_FUNCTIONS, chunk):
+            n = min(chunk, EVAL_FUNCTIONS - start)
+            functions, labels, inputs = eval_sampler.sample_uniform(n)
+            x = torch.from_numpy(functions).to(device)
+            y = torch.from_numpy(labels).to(device)
+            logits = model(x)
+            losses = F.cross_entropy(logits, y, reduction="none")
+            stats = torch.stack([losses.sum(), (logits.argmax(dim=1) == y).sum().float()]).cpu().tolist()
+            total_loss += stats[0]
+            total_correct += int(stats[1])
+            predicted.append(sampler.predict(inputs, n).cpu())
+            actual.append(torch.log(losses.clamp_min(1e-6)).cpu())
+    corr = float(np.corrcoef(torch.cat(predicted).numpy(), torch.cat(actual).numpy())[0, 1])
+    return total_loss / EVAL_FUNCTIONS, total_correct / EVAL_FUNCTIONS, corr
 
 
 if __name__ == "__main__":
