@@ -429,7 +429,36 @@ z = +7.23). After 29.9 minutes, the duration of the loss-guided run, it was
 already at 99.81% (mean of 5 epochs). Narrow peaks are now rarely missed (12
 errors instead of 192). Most remaining errors are high edges counted as
 peaks (47 of 73). The accuracy is still rising slowly. Run:
-[`runs/2026-11-24_12-41-02/`](runs/2026-11-24_12-41-02/). Runs:
+[`runs/2026-11-24_12-41-02/`](runs/2026-11-24_12-41-02/).
+
+### Adam vs AMSGrad vs Schedule-Free AdamW
+
+Two runs with the Adam variants, with otherwise the same settings as the
+batch-64 Adam run (50 epochs each). AMSGrad used lr 1e-3. Schedule-Free AdamW
+used lr 2.5e-3 with a linear warmup over the first 5% of steps, and its saved
+model is the averaged weights x. All final models were also evaluated on the
+same 51,200 fresh warped functions (seed 12345).
+
+| | Adam | AMSGrad | Schedule-Free AdamW |
+|---|---|---|---|
+| Training time | 9.7 min | 8.1 min | 9.1 min |
+| ≥ 95% / 98% / 99% after (epochs) | 10 / 21 / 31 | 8 / 25 / 40 | 10 / 22 / 31 |
+| Training accuracy, last epoch | 99.10% | 99.00% | 99.46% |
+| Training accuracy, mean of last 10 epochs | 99.19% | 99.10% | 99.36% |
+| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.19% (416 wrong) | 99.54% (237 wrong) |
+| McNemar vs Adam | — | z = −9.28 | z = +2.78 |
+| Narrow peaks missed (< 4 samples) | 192 | 301 | 165 |
+
+Schedule-Free AdamW makes about 13% fewer errors than Adam on fresh data in the
+same time, a significant difference (167 functions wrong for both, 107 only
+with Adam, 70 only with Schedule-Free). AMSGrad starts faster but then falls
+behind. Its effective step sizes can only shrink, and it ends significantly
+worse, mostly by missing narrow peaks. The training accuracies of
+Schedule-Free AdamW are measured at its gradient point y, not at the saved
+averaged weights x. Adam stays the default. Chart:
+[`comparisons/adam_variants.png`](comparisons/adam_variants.png). Runs:
+[`runs/2026-11-24_14-39-28/`](runs/2026-11-24_14-39-28/) (AMSGrad),
+[`runs/2026-11-24_14-27-12/`](runs/2026-11-24_14-27-12/) (Schedule-Free AdamW). Runs:
 [`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
 [`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
 [`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
