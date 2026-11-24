@@ -512,6 +512,43 @@ Uniform sampling stays the default. Run:
 [`runs/2026-11-24_16-19-53/`](runs/2026-11-24_16-19-53/) (see `tuples.png`
 there for the final ten functions).
 
+### 300 epochs with Schedule-Free AdamW
+
+A 300-epoch run with Schedule-Free AdamW (lr 2.5e-3, linear warmup over the
+first 5% of steps = 15 epochs), otherwise with the defaults, compared with the
+300-epoch Adam run. The saved model is the averaged weights x. Both final
+models were evaluated on the same 51,200 fresh warped functions (seed 12345).
+
+| | Adam, 300 epochs | Schedule-Free AdamW, 300 epochs |
+|---|---|---|
+| Training time | 52.3 min | 60.5 min |
+| ≥ 99% / 99.5% / 99.8% / 99.9% after (epochs) | 31 / 59 / 136 / 189 | 39 / 56 / 95 / 144 |
+| Training accuracy, mean of epochs 251–300 | 99.84% | 99.89% |
+| Accuracy on 51,200 fresh functions | 99.86% (73 wrong) | **99.95% (28 wrong)** |
+| McNemar vs Adam, 300 epochs | — | z = +5.86 |
+| Missed peaks / extra peaks | 25 / 48 | 27 / 1 |
+| Narrow peaks missed (< 4 samples) | 15 | 18 |
+| Extra peaks at a high edge | 47 | 1 |
+| Errors where the label doesn't match the samples | 3 | 3 |
+
+Schedule-Free AdamW makes 62% fewer errors than Adam on fresh data, a
+significant difference: 21 functions are wrong for both, 52 only with Adam and
+7 only with Schedule-Free. Compared with its own 50-epoch run (237 wrong), the
+longer training gives z = +14.32. The improvement comes almost entirely from
+the high edges: Adam counts 47 of them as peaks, Schedule-Free only 1. Missed
+narrow peaks stay about the same (15 vs 18). Of the 28 remaining errors, 3 are
+functions whose label doesn't match the samples, 18 are missed narrow peaks and
+7 missed low peaks (rise < 0.03).
+
+The training accuracies of Schedule-Free AdamW are measured at the gradient
+point y. There it is only slightly ahead of Adam, while its averaged weights x
+are clearly better on fresh data (0.05% vs 0.14% error). The epochs took 12.1 s
+on average instead of about 11 s in the 50-epoch run, so the run took 60.5
+instead of the expected 55 minutes; per epoch the optimizers cost about the
+same. Chart:
+[`comparisons/schedule_free_300.png`](comparisons/schedule_free_300.png). Run:
+[`runs/2026-11-24_16-48-22/`](runs/2026-11-24_16-48-22/).
+
 ## License
 
 [MIT](LICENSE)

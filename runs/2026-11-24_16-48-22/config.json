@@ -1,0 +1,20 @@
+{
+  "epochs": 300,
+  "functions_per_epoch": 12800,
+  "batch_size": 64,
+  "learning_rate": 0.0025,
+  "optimizer": "schedule_free_adamw",
+  "momentum": null,
+  "sf_warmup_steps": 3000,
+  "seed": 0,
+  "num_samples": 284,
+  "channels": 32,
+  "loss": "cross_entropy",
+  "focal_gamma": null,
+  "ohem_pool": null,
+  "sampler": "uniform",
+  "pool_factor": null,
+  "predictor_lr": null,
+  "adversary_lr": null,
+  "eval_functions": null
+}
