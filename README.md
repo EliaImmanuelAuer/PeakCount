@@ -113,7 +113,8 @@ runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
               learning rate, optimizer, momentum, sf_warmup_steps, seed, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
-              pool_factor, predictor_lr, adversary_lr, eval_functions)
+              pool_factor, predictor_lr, adversary_lr, eval_functions,
+              fixed_eval_functions, fixed_eval_seed)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
@@ -136,6 +137,7 @@ progress. The log has these columns:
 | `functions_seen` | Total number of training functions so far |
 | `timestamp` | Local time when the epoch ended (ISO 8601) |
 | `predictor_corr` | Loss-guided sampler only: correlation between predicted and actual log-loss (see below) |
+| `fixed_loss`, `fixed_accuracy` | Only with `FIXED_EVAL_FUNCTIONS`: loss and accuracy of the model's weights on a fixed set (see below). For Schedule-Free AdamW instead `fixed_loss_x`, `fixed_accuracy_x`, and the same for `y` and `z` |
 
 With OHEM, `loss` and `accuracy` are measured over all scored candidates, so
 they stay comparable with runs without OHEM. `objective` refers to the selected
@@ -150,6 +152,14 @@ log-loss on them; it is empty in other runs.
 The adversarial sampler also logs `loss` and `accuracy` on `EVAL_FUNCTIONS`
 fresh uniform functions after each epoch. There, `objective` is the mean loss
 on the ten tuples during the epoch.
+
+With `FIXED_EVAL_FUNCTIONS` set (default `None`), the same uniform functions,
+drawn once with `FIXED_EVAL_SEED` (2026), are scored after every epoch. Unlike
+the fresh functions of the training log, these curves contain no sampling
+noise between epochs, so every change comes from the weights. For
+Schedule-Free AdamW, the averaged weights x, the gradient point y and the
+plain iterate z are scored separately. This evaluation runs after the epoch's
+time is taken, so `seconds` stays comparable with other runs.
 
 After the last epoch, [`plot.py`](plot.py) draws the log as `chart.png`. The
 chart shows loss (left
