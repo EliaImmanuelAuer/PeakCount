@@ -12,6 +12,11 @@ The tuples are stored as unconstrained numbers and mapped to valid parameters, s
 ascent step yields a valid function of the same pattern:
   knot gaps   = softmax(a)                      (sorted knots, edges at 0 and 1)
   knot values = band_low + band_width * sigmoid(b)
+  with data.MIN_KNOT_DISTANCE = d > 0 instead:
+  knot gaps   = d + (1 - (k+1) d) * softmax(a)  (every gap >= d)
+  edge values = lo + (hi - lo) * sigmoid(b), where [lo, hi] is the part of the edge band at
+                least d away from the neighbouring peak or valley; in monotone functions the
+                second edge is mapped onto the two intervals at least d away from the first
   warps (c)   = data.WARP "quadratic": c = tanh(.) for each warp;
                 "cubic": for each warp, two numbers give a direction t = sigmoid(.) and a radius
                 rho = sigmoid(.) in the coordinates u = sqrt(alpha), v = sqrt(beta), where the
@@ -47,6 +52,13 @@ def _ellipse_scale(t):
     return root(3.0 / ((1.0 - t) ** 2 - (1.0 - t) * t + t * t))
 
 
+def _edge_interval(m, neighbour_is_peak, d):
+    """Allowed values [lo, hi] of an edge whose neighbouring knot (peak or valley) has value m."""
+    if neighbour_is_peak:
+        return EDGE_BAND[0], min(EDGE_BAND[1], m - d)
+    return max(EDGE_BAND[0], m + d), EDGE_BAND[1]
+
+
 def _encode_warp(params: tuple, warp: str) -> list[float]:
     """Unconstrained numbers for one warp's parameters (inverse of AdversarialTuples._warps)."""
     if warp == "quadratic":
@@ -63,6 +75,7 @@ class AdversarialTuples:
         variants = VARIANTS * copies
         n = len(variants)
         self.warp = data.WARP
+        self.d = d = data.MIN_KNOT_DISTANCE
         per_warp = data.WARP_PARAMS[self.warp]
         self.labels = np.array([label for label, _ in variants], dtype=np.int64)
         self.patterns = [pattern for _, pattern in variants]
@@ -73,6 +86,13 @@ class AdversarialTuples:
         interior_mask = np.zeros((n, MAX_KNOTS))  # knots 1 .. K-2: the interior extrema
         band_low = np.zeros((n, MAX_KNOTS))
         band_width = np.zeros((n, MAX_KNOTS))
+        gap_free = np.ones((n, 1))           # room left for the softmax part of the gaps
+        first = np.zeros((n, MAX_KNOTS))     # one-hot: left edge
+        last = np.zeros((n, MAX_KNOTS))      # one-hot: right edge (index K - 1)
+        before_last = np.zeros((n, MAX_KNOTS))  # one-hot: right edge's neighbour (index K - 2)
+        mono = np.zeros((n, 1))              # no interior knots: the edges are each other's neighbours
+        left_peak = np.zeros((n, 1))         # the left edge's neighbour is a peak (else a valley)
+        right_peak = np.zeros((n, 1))
         for t, pattern in enumerate(self.patterns):
             params = sample_params(pattern, rng)
             knots = len(pattern) + 2
@@ -86,6 +106,23 @@ class AdversarialTuples:
                 s = np.clip((params.knot_y[j] - lo) / (hi - lo), EPS, 1.0 - EPS)
                 b[t, j] = np.log(s / (1.0 - s))
             c[t] = _encode_warp(params.pre, self.warp) + _encode_warp(params.post, self.warp)
+            k, y = len(pattern), params.knot_y
+            first[t, 0], last[t, k + 1], before_last[t, k] = 1.0, 1.0, 1.0
+            mono[t] = float(k == 0)
+            left_peak[t] = float(k > 0 and pattern[0] == "P")
+            right_peak[t] = float(k > 0 and pattern[-1] == "P")
+            if d > 0.0:  # gaps and edges in the constrained parametrization
+                gap_free[t] = 1.0 - (k + 1) * d
+                a[t, : knots - 1] = np.log(np.maximum((gaps - d) / gap_free[t], EPS))
+                if k == 0:
+                    l1 = max(y[0] - d - EDGE_BAND[0], 0.0)
+                    total = l1 + max(EDGE_BAND[1] - y[0] - d, 0.0)
+                    pos = y[1] - EDGE_BAND[0] if y[1] < y[0] else l1 + (y[1] - y[0] - d)
+                    b[t, 1] = _logit(pos / total)
+                else:
+                    for edge, nb, is_peak in ((0, 1, left_peak[t, 0]), (k + 1, k, right_peak[t, 0])):
+                        lo, hi = _edge_interval(y[nb], is_peak, d)
+                        b[t, edge] = _logit((y[edge] - lo) / (hi - lo))
 
         def tensor(v):
             return torch.tensor(v, dtype=torch.float32, device=device)
@@ -97,6 +134,9 @@ class AdversarialTuples:
         self.interior_mask = tensor(interior_mask)[:, None, :]  # (n, 1, MAX_KNOTS)
         self.band_low = tensor(band_low)
         self.band_width = tensor(band_width)
+        self.gap_free = tensor(gap_free)
+        self.first, self.last, self.before_last = tensor(first), tensor(last), tensor(before_last)
+        self.mono, self.left_peak, self.right_peak = tensor(mono), tensor(left_peak), tensor(right_peak)
         self.cumsum = tensor(np.triu(np.ones((MAX_GAPS, MAX_GAPS))))  # gaps @ cumsum = right knots
         self.segments = tensor(np.arange(MAX_GAPS))
         self.x = tensor(np.linspace(0.0, 1.0, num_samples))
@@ -128,10 +168,40 @@ class AdversarialTuples:
         """Valid parameters (knot_x, knot_y, pre, post) as tensors; padded knots sit at x = 1."""
         logits = self.a * self.gap_mask + (self.gap_mask - 1.0) * 1e4  # padded gaps -> exp = 0
         gaps = torch.softmax(logits, dim=1)
+        if self.d > 0.0:
+            gaps = self.gap_mask * (self.d + self.gap_free * gaps)
         knot_x = torch.cat((torch.zeros_like(gaps[:, :1]), gaps @ self.cumsum), dim=1)
         knot_y = self.band_low + self.band_width * torch.sigmoid(self.b)
+        if self.d > 0.0:
+            knot_y = self._constrained_edges(knot_y)
         pre, post = self._warps()
         return knot_x, knot_y, pre, post
+
+    def _constrained_edges(self, free: torch.Tensor) -> torch.Tensor:
+        """Replace the edge values by values at least d away from their neighbours (see the module
+        docstring); interior knots and the first edge of monotone functions keep their free values."""
+        d, lo_band, hi_band = self.d, EDGE_BAND[0], EDGE_BAND[1]
+        s = torch.sigmoid(self.b)
+
+        def edge(m, is_peak, s_edge):
+            lo = is_peak * lo_band + (1.0 - is_peak) * torch.clamp(m + d, min=lo_band)
+            hi = is_peak * torch.clamp(m - d, max=hi_band) + (1.0 - is_peak) * hi_band
+            return lo + (hi - lo) * s_edge
+
+        left_nb = free[:, 1:2]
+        right_nb = (free * self.before_last).sum(dim=1, keepdim=True)
+        s_right = (s * self.last).sum(dim=1, keepdim=True)
+        left = edge(left_nb, self.left_peak, s[:, :1])
+        right = edge(right_nb, self.right_peak, s_right)
+        # Monotone: the second edge on [1/3, e0 - d] united with [e0 + d, 2/3].
+        e0 = free[:, :1]
+        l1, l2 = torch.relu(e0 - d - lo_band), torch.relu(hi_band - e0 - d)
+        pos = s_right * (l1 + l2)
+        # pos == l1 can happen when the sigmoid saturates; with an empty upper part, stay below.
+        second = torch.where((pos < l1) | (l2 <= 0.0), lo_band + pos, e0 + d + (pos - l1))
+        left = self.mono * e0 + (1.0 - self.mono) * left
+        right = self.mono * second + (1.0 - self.mono) * right
+        return free * (1.0 - self.first - self.last) + left * self.first + right * self.last
 
     def functions(self) -> torch.Tensor:
         """The tuples' functions sampled on the grid, (tuples, num_samples), differentiable in the tuples."""

@@ -135,6 +135,7 @@ def main() -> None:
         "sf_warmup_steps": sf_warmup_steps,
         "seed": SEED,
         "warp": data.WARP,
+        "min_knot_distance": data.MIN_KNOT_DISTANCE,
         "num_samples": NUM_SAMPLES,
         "channels": CHANNELS,
         "loss": LOSS,

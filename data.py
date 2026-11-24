@@ -26,8 +26,19 @@ They keep every peak and valley, so the label stays correct. WARP selects the fa
 - "quadratic" (used by all runs before 2026-11-25): w(x) = x * (c * (x - 1) + 1) with
   c ~ U[-1, 1], the special case alpha = 1 - c, beta = 1 + c.
 
-Knots are not required to keep a minimum distance, so very close knots can make
-a peak invisible on the sample grid; the label is still the intended class.
+Neighbouring knots (the edges included) keep a horizontal and a vertical distance of at
+least MIN_KNOT_DISTANCE (before warping), drawn without rejection: the distribution is the
+uniform one above conditioned on these distances, i.e. exactly what rejection sampling would
+give. Horizontally, k sorted uniform points in [0, 1 - (k+1) d] are shifted by d, 2d, ..., kd.
+Vertically, peak and valley bands are 1/3 apart, so only pairs with an edge can be too close:
+two edges (monotone pattern) are drawn by sort-and-shift; an edge next to a peak from the band
+rectangle minus its forbidden corner; for patterns P and V (both edges next to the same knot)
+the knot comes from its exact marginal and both edges from their allowed interval. Valleys
+reuse the peak samplers mirrored at y = 1/2. With MIN_KNOT_DISTANCE = 0, the generator
+reproduces the functions of all runs before 2026-11-25 (no minimum distance).
+
+The warping can still squeeze knots together, so a peak can occasionally be invisible on the
+sample grid; the label is still the intended class.
 """
 
 from typing import NamedTuple
@@ -39,6 +50,9 @@ NUM_CLASSES = 3
 # Family of the random warps applied before and after the knot curve: "cubic" or "quadratic".
 WARP = "cubic"
 WARP_PARAMS = {"quadratic": 1, "cubic": 2}  # numbers per warp: (c,) or (alpha, beta)
+
+# Minimum horizontal and vertical distance of neighbouring knots, edges included (0 = none).
+MIN_KNOT_DISTANCE = 0.05
 
 # Areas of the pieces of the admissible (alpha, beta) region of the cubic warp.
 KITE_HALF_AREA = 3.0                      # triangles (0,0),(3,0),(2,2) and (0,0),(2,2),(0,3)
@@ -110,13 +124,80 @@ class FunctionParams(NamedTuple):
     post: tuple         # postcomposition warp, same form
 
 
+def _edge_and_peak(d: float, rng: np.random.Generator) -> tuple[float, float]:
+    """(edge, peak) uniform on EDGE_BAND x PEAK_BAND with peak - edge >= d.
+
+    With a = 2/3 - edge and b = peak - 2/3 in [0, 1/3], the region a + b >= d is the rectangle
+    a >= d plus the trapezoid a < d, b >= d - a (density of a there proportional to 1/3 - d + a)."""
+    c = 1.0 / 3.0
+    u0, u1, u2 = rng.random(3)
+    rect, trap = (c - d) * c, d * c - d * d / 2.0
+    if u0 * (rect + trap) < rect:
+        a, b = d + u1 * (c - d), u2 * c
+    else:
+        a = -(c - d) + np.sqrt((c - d) ** 2 + 2.0 * u1 * trap)  # inverse CDF of the linear density
+        b = (d - a) + u2 * (c - d + a)
+    return 2.0 / 3.0 - a, 2.0 / 3.0 + b
+
+
+def _peak_between_edges(d: float, rng: np.random.Generator) -> tuple[float, float, float]:
+    """(edge, peak, edge) uniform on EDGE_BAND x PEAK_BAND x EDGE_BAND with both edges >= d below.
+
+    Given the peak m, each edge is uniform on [1/3, 1/3 + L], L = min(1/3, m - d - 1/3), so m has
+    density proportional to L(m)^2: with z = m - 2/3, (1/3 - d + z)^2 for z < d, else 1/9."""
+    c = 1.0 / 3.0
+    u0, u1, u2, u3 = rng.random(4)
+    curved, flat = (c**3 - (c - d) ** 3) / 3.0, c * c * (c - d)
+    if u0 * (curved + flat) < curved:
+        z = np.cbrt((c - d) ** 3 + u1 * (c**3 - (c - d) ** 3)) - (c - d)  # inverse CDF of the cubic part
+    else:
+        z = d + u1 * (c - d)
+    length = min(c, c - d + z)
+    return c + u2 * length, 2.0 / 3.0 + z, c + u3 * length
+
+
+def _two_edges(d: float, rng: np.random.Generator) -> tuple[float, float]:
+    """Two edge values uniform on EDGE_BAND^2 with |difference| >= d (sort-and-shift, random order)."""
+    lo, hi = np.sort(rng.uniform(EDGE_BAND[0], EDGE_BAND[1] - d, 2))
+    pair = (lo, hi + d)
+    return pair if rng.random() < 0.5 else pair[::-1]
+
+
+def _knot_values(pattern: str, d: float, rng: np.random.Generator) -> np.ndarray:
+    """Knot values (edges included) with vertical neighbour distances >= d, uniform given that."""
+    def mirror(values, is_valley):  # y -> 1 - y turns a valley into a peak and keeps the edge band
+        return tuple(1.0 - v for v in values) if is_valley else values
+
+    k = len(pattern)
+    y = np.empty(k + 2)
+    if k == 0:
+        y[:] = _two_edges(d, rng)
+    elif k == 1:
+        y[:] = mirror(_peak_between_edges(d, rng), pattern == "V")
+    else:
+        y[0], y[1] = mirror(_edge_and_peak(d, rng), pattern[0] == "V")
+        y[-1], y[-2] = mirror(_edge_and_peak(d, rng), pattern[-1] == "V")
+        for j in range(2, k):  # interior knots without an edge neighbour: their band only
+            lo, hi = PEAK_BAND if pattern[j - 1] == "P" else VALLEY_BAND
+            y[j] = rng.uniform(lo, hi)
+    return y
+
+
 def sample_params(pattern: str, rng: np.random.Generator) -> FunctionParams:
     """Draw the random parameters of one function with the given interior extrema pattern."""
-    interior_x = np.sort(rng.uniform(0.0, 1.0, len(pattern)))
-    knot_x = np.concatenate(([0.0], interior_x, [1.0]))
-
-    bands = [EDGE_BAND] + [PEAK_BAND if k == "P" else VALLEY_BAND for k in pattern] + [EDGE_BAND]
-    knot_y = np.array([rng.uniform(lo, hi) for lo, hi in bands])
+    d = MIN_KNOT_DISTANCE
+    k = len(pattern)
+    if not 0.0 <= d < 1.0 / 6.0:  # 6 gaps for the longest pattern; edge pairs need d < 1/3
+        raise ValueError(f"MIN_KNOT_DISTANCE must be in [0, 1/6), got {d}")
+    if d == 0.0:  # the original sampling, draw for draw
+        interior_x = np.sort(rng.uniform(0.0, 1.0, k))
+        knot_x = np.concatenate(([0.0], interior_x, [1.0]))
+        bands = [EDGE_BAND] + [PEAK_BAND if c == "P" else VALLEY_BAND for c in pattern] + [EDGE_BAND]
+        knot_y = np.array([rng.uniform(lo, hi) for lo, hi in bands])
+    else:
+        interior_x = np.sort(rng.uniform(0.0, 1.0 - (k + 1) * d, k)) + d * np.arange(1, k + 1)
+        knot_x = np.concatenate(([0.0], interior_x, [1.0]))
+        knot_y = _knot_values(pattern, d, rng)
 
     if WARP == "quadratic":  # both parameters in one call, as in all runs before the cubic warp
         g, h = rng.uniform(-1.0, 1.0, 2)

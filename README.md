@@ -66,11 +66,28 @@ Each function is built from **knots**:
    | 1 peak | `P`, `VP`, `PV`, `VPV` |
    | 2 peaks | `PVP`, `VPVP`, `PVPV`, `VPVPV` |
 
-2. Place the interior knots at sorted uniform random positions in `[0, 1]`,
-   with no minimum distance between them. Add the edges `x = 0` and `x = 1`.
+2. Place the interior knots at sorted uniform random positions in `[0, 1]` and
+   add the edges `x = 0` and `x = 1`.
 3. Give each knot a value from its band: peaks `U[2/3, 1]`, edges `U[1/3, 2/3]`,
    valleys `U[0, 1/3]`. This keeps every peak higher and every valley lower than
    its neighbours.
+
+   Since 2026-11-25, neighbouring knots (edges included) keep a horizontal and a
+   vertical distance of at least `MIN_KNOT_DISTANCE = 0.05` before warping. The
+   knots are drawn from the distribution above conditioned on these distances,
+   which is exactly what rejection sampling would give, but without rejection:
+   - Horizontally, `k` sorted uniform points in `[0, 1 − (k+1)·0.05]` are
+     shifted by `0.05, 0.10, …, k·0.05`.
+   - Vertically, peak and valley bands are already `1/3` apart, so only pairs
+     with an edge can be too close. An edge next to a peak is drawn from the
+     band rectangle minus its forbidden corner (a rectangle plus a trapezoid
+     with a quadratic inverse CDF). For the patterns `P` and `V`, where both
+     edges border the same knot, that knot comes from its exact marginal (a
+     cubic inverse CDF) and the edges uniformly from their allowed interval.
+     The two edges of a monotone function are drawn by sort-and-shift in random
+     order. Valleys use the peak samplers mirrored at `y = 1/2`.
+
+   `MIN_KNOT_DISTANCE = 0` reproduces the earlier functions exactly.
 4. Connect neighbouring knots with a smoothstep curve
    `y_i + (y_{i+1} - y_i)·(3t² − 2t³)`. It is strictly monotone between knots
    and has zero slope at each knot, so the function has exactly the intended
@@ -96,12 +113,16 @@ Each function is built from **knots**:
 
 Knots very close together, or a warping that squeezes a narrow peak further,
 can make a peak disappear between two sample points. The label is still the
-intended class. On the 51,200 test functions (seed 12345), 99.98% of labels
-match the number of peaks counted in the samples with the quadratic warp
-(11 differ) and 99.93% with the cubic warp (37 differ).
+intended class. On the 51,200 test functions (seed 12345), the label differs
+from the number of peaks counted in the samples for this many functions:
 
-**All results below used the quadratic warp** (the two runs from 2026-11-22
-used no warp at all).
+| | No minimum distance | Minimum distance 0.05 |
+|---|---|---|
+| Quadratic warp | 11 | 4 |
+| Cubic warp | 37 | 21 |
+
+**All results below used the quadratic warp and no minimum knot distance**
+(the two runs from 2026-11-22 used no warp at all).
 
 ## Training
 
@@ -116,7 +137,7 @@ constants at the top of the file:
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally Adam with AMSGrad (`"adam_amsgrad"`), Schedule-Free AdamW (`"schedule_free_adamw"`, Defazio et al. 2024, linear warmup over `SF_WARMUP_FRACTION` of all steps; the saved `model.pt` holds its averaged weights x, while the logged training accuracy is measured at its gradient point y) or SGD with momentum (`"sgd"`, `SGD_MOMENTUM`). All run fully on DirectML |
 | Channels per conv layer | 32 (`CHANNELS`) |
-| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, see [`adversary.py`](adversary.py)): `ADVERSARY_COPIES` parameter tuples per extrema pattern (default 1), each drawn like a normal training function, form the batch (needs `BATCH_SIZE = 10 * ADVERSARY_COPIES`). After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands; quadratic warps via tanh, cubic warps via a direction and a radius in `(√α, √β)` inside the ellipse, without sin/cos because DirectML computes those only to about 6·10⁻⁵), so they always stay valid. The loss-guided predictors get the warp parameters as inputs (`c` per warp, or `α, β` per warp) |
+| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, see [`adversary.py`](adversary.py)): `ADVERSARY_COPIES` parameter tuples per extrema pattern (default 1), each drawn like a normal training function, form the batch (needs `BATCH_SIZE = 10 * ADVERSARY_COPIES`). After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands; with a minimum knot distance, gaps are `0.05 + (1 − (k+1)·0.05)·softmax` and each edge value is mapped into the part of its band that keeps the distance to its neighbour; quadratic warps via tanh, cubic warps via a direction and a radius in `(√α, √β)` inside the ellipse, without sin/cos because DirectML computes those only to about 6·10⁻⁵), so they always stay valid. The loss-guided predictors get the warp parameters as inputs (`c` per warp, or `α, β` per warp) |
 | Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
@@ -126,7 +147,8 @@ Each run gets its own folder, named after its start time:
 ```
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
-              learning rate, optimizer, momentum, sf_warmup_steps, seed, warp, num_samples,
+              learning rate, optimizer, momentum, sf_warmup_steps, seed, warp,
+              min_knot_distance, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
               pool_factor, predictor_lr, adversary_lr, eval_functions,
               fixed_eval_functions, fixed_eval_seed)
