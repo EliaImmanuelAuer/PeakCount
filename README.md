@@ -101,7 +101,7 @@ constants at the top of the file:
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally Adam with AMSGrad (`"adam_amsgrad"`), Schedule-Free AdamW (`"schedule_free_adamw"`, Defazio et al. 2024, linear warmup over `SF_WARMUP_FRACTION` of all steps; the saved `model.pt` holds its averaged weights x, while the logged training accuracy is measured at its gradient point y) or SGD with momentum (`"sgd"`, `SGD_MOMENTUM`). All run fully on DirectML |
 | Channels per conv layer | 32 (`CHANNELS`) |
-| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss |
+| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, needs `BATCH_SIZE = 10`, see [`adversary.py`](adversary.py)): exactly one parameter tuple per extrema pattern forms the batch of 10. After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands, g and h via tanh), so they always stay valid |
 | Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
@@ -113,10 +113,13 @@ runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
               learning rate, optimizer, momentum, sf_warmup_steps, seed, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
-              pool_factor, predictor_lr, eval_functions)
+              pool_factor, predictor_lr, adversary_lr, eval_functions)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
+  tuples.csv  adversarial sampler only: the ten tuples after every epoch
+              (epoch 0 = start), with each tuple's loss
+  tuples.png  adversarial sampler only: the final ten functions with their samples
 ```
 
 After every epoch, `train.py` prints the mean training loss and accuracy, saves
@@ -143,6 +146,10 @@ after each epoch, `EVAL_FUNCTIONS` (12,800) fresh uniform functions are scored
 without gradients, and `loss` and `accuracy` come from these. An extra column
 `predictor_corr` holds the correlation between the predicted and the actual
 log-loss on them; it is empty in other runs.
+
+The adversarial sampler also logs `loss` and `accuracy` on `EVAL_FUNCTIONS`
+fresh uniform functions after each epoch. There, `objective` is the mean loss
+on the ten tuples during the epoch.
 
 After the last epoch, [`plot.py`](plot.py) draws the log as `chart.png`. The
 chart shows loss (left
@@ -463,6 +470,47 @@ averaged weights x. Adam stays the default. Chart:
 [`comparisons/adam_variants.png`](comparisons/adam_variants.png). Runs:
 [`runs/2026-11-24_14-39-28/`](runs/2026-11-24_14-39-28/) (AMSGrad),
 [`runs/2026-11-24_14-27-12/`](runs/2026-11-24_14-27-12/) (Schedule-Free AdamW).
+
+### Adversarial tuples
+
+One run with the adversarial sampler: the batch is always the same ten
+functions, one parameter tuple per extrema pattern (2 / 4 / 4 functions with
+0 / 1 / 2 peaks). After each backward pass, the network takes an Adam descent
+step (lr 1e-3) and the tuples an Adam ascent step (lr 1e-2), both from the same
+gradients. The tuples started as a random draw (seed 0). There was no guard
+against degenerate tuples. The run had 50 epochs of 320 steps (16,000 steps,
+160,000 functions) and took 11.2 min.
+
+| | Batch 64, uniform (baseline) | Adversarial tuples |
+|---|---|---|
+| Training steps / functions | 10,000 / 640,000 | 16,000 / 160,000 |
+| Training time | 9.7 min | 11.2 min |
+| Mean loss on the ten tuples, epoch 1 → 4 → 50 | — | 0.27 → 0.00005 → < 0.000001 |
+| Accuracy on 12,800 uniform functions, epoch 1 / 12 / 50 | — | 48.6% / 50.8% / 46.4% |
+| Accuracy on 51,200 fresh functions | 99.46% | 46.50% |
+
+The run failed. The network won the game against the tuples:
+
+- **Memorization instead of learning.** The network has 26,051 parameters and
+  always sees the same ten functions. It learns them by heart within the first
+  epoch; their loss drops below 0.001 and later to 0. It never learns to count
+  peaks in general. On uniform data it stays near 47% accuracy and mostly
+  predicts 1 or 2 peaks.
+- **The ascent stalls.** The gradient of the cross-entropy is proportional to
+  1 − p(correct class). Once a tuple is classified with certainty, it gets
+  almost no gradient, so the tuples barely moved between epochs 2 and 12.
+- **Breakdown at epoch 13.** The loss on all tuples suddenly jumped back to
+  about 1, and uniform accuracy fell to 33%, which is chance level.
+  The tuples moved strongly while the network was disturbed, and then the
+  network memorized the new tuples again.
+- **The tuples became degenerate.** In the end, several of them hide their
+  peaks between neighbouring samples or squeeze them against the edge (e.g.
+  PVPV: smallest knot gap 0.05 samples, so the samples show no peak at all).
+  The network still labels them correctly, which only works by memorization.
+
+Uniform sampling stays the default. Run:
+[`runs/2026-11-24_16-19-53/`](runs/2026-11-24_16-19-53/) (see `tuples.png`
+there for the final ten functions).
 
 ## License
 
