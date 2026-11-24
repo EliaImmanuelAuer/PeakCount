@@ -15,7 +15,7 @@ import torch_directml
 from data import generate_batch
 from losses import focal_loss
 from model import NUM_SAMPLES, PeakCNN
-from optim import Adam
+from optim import Adam, ScheduleFreeAdamW
 from plot import plot_training_log
 from sampler import LossGuidedSampler
 
@@ -23,8 +23,11 @@ EPOCHS = 50
 FUNCTIONS_PER_EPOCH = 12_800
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
-OPTIMIZER = "adam"      # "adam" (optim.Adam, runs fully on DirectML) or "sgd" (torch.optim.SGD)
+# "adam" (optim.Adam, runs fully on DirectML), "adam_amsgrad" (the same with AMSGrad),
+# "schedule_free_adamw" (optim.ScheduleFreeAdamW) or "sgd" (torch.optim.SGD).
+OPTIMIZER = "adam"
 SGD_MOMENTUM = 0.9      # only used when OPTIMIZER = "sgd"
+SF_WARMUP_FRACTION = 0.05  # schedule_free_adamw: linear warmup over this share of all steps
 SEED = 0
 CHANNELS = 32           # conv channels per layer of PeakCNN
 LOSS = "cross_entropy"  # training objective: "cross_entropy" or "focal"
@@ -53,8 +56,9 @@ LOG_COLUMNS = ["epoch", "loss", "objective", "accuracy", "seconds", "functions_s
 def main() -> None:
     if LOSS not in ("cross_entropy", "focal"):
         raise ValueError(f"unknown LOSS {LOSS!r}; use 'cross_entropy' or 'focal'")
-    if OPTIMIZER not in ("adam", "sgd"):
-        raise ValueError(f"unknown OPTIMIZER {OPTIMIZER!r}; use 'adam' or 'sgd'")
+    if OPTIMIZER not in ("adam", "adam_amsgrad", "schedule_free_adamw", "sgd"):
+        raise ValueError(f"unknown OPTIMIZER {OPTIMIZER!r}; use 'adam', 'adam_amsgrad', "
+                         "'schedule_free_adamw' or 'sgd'")
     if OHEM_POOL is not None and OHEM_POOL <= BATCH_SIZE:
         raise ValueError(f"OHEM_POOL ({OHEM_POOL}) must be larger than BATCH_SIZE ({BATCH_SIZE})")
     if SAMPLER not in ("uniform", "loss_guided"):
@@ -67,11 +71,15 @@ def main() -> None:
     device = torch_directml.device()
 
     model = PeakCNN(NUM_SAMPLES, CHANNELS).to(device)
-    if OPTIMIZER == "adam":
-        optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+    steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
+    schedule_free = OPTIMIZER == "schedule_free_adamw"
+    sf_warmup_steps = round(SF_WARMUP_FRACTION * EPOCHS * steps_per_epoch) if schedule_free else None
+    if OPTIMIZER in ("adam", "adam_amsgrad"):
+        optimizer = Adam(model.parameters(), lr=LEARNING_RATE, amsgrad=OPTIMIZER == "adam_amsgrad")
+    elif schedule_free:
+        optimizer = ScheduleFreeAdamW(model.parameters(), lr=LEARNING_RATE, warmup_steps=sf_warmup_steps)
     else:
         optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE, momentum=SGD_MOMENTUM)
-    steps_per_epoch = FUNCTIONS_PER_EPOCH // BATCH_SIZE
     if guided:
         sampler = LossGuidedSampler(NUM_SAMPLES, device, rng, POOL_FACTOR, PREDICTOR_LR)
         eval_sampler = LossGuidedSampler(NUM_SAMPLES, device, np.random.default_rng(SEED + 1),
@@ -91,6 +99,7 @@ def main() -> None:
         "learning_rate": LEARNING_RATE,
         "optimizer": OPTIMIZER,
         "momentum": SGD_MOMENTUM if OPTIMIZER == "sgd" else None,
+        "sf_warmup_steps": sf_warmup_steps,
         "seed": SEED,
         "num_samples": NUM_SAMPLES,
         "channels": CHANNELS,
@@ -170,6 +179,8 @@ def main() -> None:
             mean_objective = total_objective / total_trained
             accuracy = total_correct / total_seen
             predictor_corr = ""
+            if schedule_free:
+                optimizer.eval()  # evaluate and save the averaged weights x, not the gradient point y
             if guided:
                 # The sampled batches are deliberately hard, so log fresh uniform functions instead.
                 mean_loss, accuracy, predictor_corr = evaluate_uniform(model, sampler, eval_sampler, device)
@@ -177,6 +188,8 @@ def main() -> None:
 
             state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
             torch.save(state, model_path)
+            if schedule_free:
+                optimizer.train()
 
             seconds = time.perf_counter() - start
             functions_seen += total_trained

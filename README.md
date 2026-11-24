@@ -99,7 +99,7 @@ constants at the top of the file:
 | Functions per epoch | 12,800 (freshly generated) |
 | Batch size | 64 (256 in runs before the batch size comparison) |
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
-| Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally SGD with momentum (`OPTIMIZER = "sgd"`, `SGD_MOMENTUM`) |
+| Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally Adam with AMSGrad (`"adam_amsgrad"`), Schedule-Free AdamW (`"schedule_free_adamw"`, Defazio et al. 2024, linear warmup over `SF_WARMUP_FRACTION` of all steps; the saved `model.pt` holds its averaged weights x, while the logged training accuracy is measured at its gradient point y) or SGD with momentum (`"sgd"`, `SGD_MOMENTUM`). All run fully on DirectML |
 | Channels per conv layer | 32 (`CHANNELS`) |
 | Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss |
 | Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
@@ -111,7 +111,7 @@ Each run gets its own folder, named after its start time:
 ```
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
-              learning rate, optimizer, momentum, seed, num_samples,
+              learning rate, optimizer, momentum, sf_warmup_steps, seed, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
               pool_factor, predictor_lr, eval_functions)
   model.pt    weights (state_dict), overwritten after every epoch
