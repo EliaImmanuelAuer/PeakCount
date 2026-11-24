@@ -1,0 +1,18 @@
+{
+  "epochs": 50,
+  "functions_per_epoch": 12800,
+  "batch_size": 64,
+  "learning_rate": 0.001,
+  "optimizer": "adam",
+  "momentum": null,
+  "seed": 0,
+  "num_samples": 284,
+  "channels": 32,
+  "loss": "cross_entropy",
+  "focal_gamma": null,
+  "ohem_pool": null,
+  "sampler": "loss_guided",
+  "pool_factor": 8,
+  "predictor_lr": 0.001,
+  "eval_functions": 12800
+}

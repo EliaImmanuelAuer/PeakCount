@@ -370,7 +370,42 @@ models, 120 only for the baseline and 117 only with OHEM (McNemar z = +0.19).
 OHEM shifts the error types. It misses about a third fewer narrow peaks but
 often counts a high edge as a peak. OHEM stays off by default. Chart:
 [`comparisons/ohem.png`](comparisons/ohem.png). Run:
-[`runs/2026-11-24_11-16-36/`](runs/2026-11-24_11-16-36/). Runs:
+[`runs/2026-11-24_11-16-36/`](runs/2026-11-24_11-16-36/).
+
+### Loss-guided sampling
+
+A run with the loss-guided sampler (pool of 8 candidates per batch slot,
+predictor learning rate 1e-3) and otherwise the same settings as the batch-64
+run with uniform sampling. Both final models were also evaluated on the same
+51,200 fresh warped functions (seed 12345).
+
+| | Uniform sampling | Loss-guided sampling |
+|---|---|---|
+| Training time | 9.7 min | 29.9 min |
+| ≥ 95% / 98% / 99% after (epochs) | 10 / 21 / 31 | 9 / 18 / 25 |
+| ≥ 99% after (minutes) | 6.2 min | 16.8 min |
+| Accuracy, last epoch | 99.10% | 99.71% |
+| Accuracy, mean of last 10 epochs | 99.19% | 99.47% |
+| Accuracy on 51,200 fresh functions | 99.46% (274 wrong) | 99.66% (174 wrong) |
+| Missed peaks / extra peaks | 264 / 10 | 113 / 61 |
+| Narrow peaks missed (< 4 samples) | 192 | 88 |
+| Predictor correlation (epoch 1 → 50) | — | 0.57 → 0.83 |
+
+The loss-guided model makes about a third fewer errors on fresh data, a
+significant difference: 86 functions are wrong for both models, 188 only with
+uniform sampling and 88 only with loss-guided sampling (McNemar z = +6.02). It
+misses fewer than half as many narrow peaks, but counts a high edge as a peak
+more often (56 instead of 10). Drawing and scoring the candidate pool in Python
+makes each step about three times as expensive, so per minute it is clearly
+behind.
+
+The two training curves are measured differently. The loss-guided run scores
+fresh uniform functions after each epoch, while the uniform run averages over
+the epoch's training batches as the weights change. The loss-guided curve
+therefore looks better in the first epochs and is noisier. Uniform sampling
+stays the default. Chart:
+[`comparisons/loss_guided.png`](comparisons/loss_guided.png). Run:
+[`runs/2026-11-24_12-09-32/`](runs/2026-11-24_12-09-32/). Runs:
 [`runs/2026-11-22_21-35-28/`](runs/2026-11-22_21-35-28/) (16),
 [`runs/2026-11-23_20-19-06/`](runs/2026-11-23_20-19-06/) (48),
 [`runs/2026-11-23_20-31-14/`](runs/2026-11-23_20-31-14/) (64).
