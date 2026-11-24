@@ -40,12 +40,13 @@ FOCAL_GAMMA = 2.0       # focusing parameter, only used when LOSS = "focal"
 OHEM_POOL = None
 # How training functions are drawn: "uniform" (data.generate_batch), "loss_guided"
 # (sampler.py: per-class loss predictors pick high-loss parameters from a candidate pool) or
-# "adversarial" (adversary.py: one tuple per pattern, the batch of 10, each tuple ascending its
-# loss with Adam; needs BATCH_SIZE = 10).
+# "adversarial" (adversary.py: ADVERSARY_COPIES tuples per pattern form the batch, each tuple
+# ascending its loss with Adam; needs BATCH_SIZE = 10 * ADVERSARY_COPIES).
 SAMPLER = "uniform"
 POOL_FACTOR = 8          # loss_guided: candidates per batch slot
 PREDICTOR_LR = 1e-3      # loss_guided: Adam learning rate of the loss predictors
 ADVERSARY_LR = 1e-2      # adversarial: Adam learning rate of the tuples' gradient ascent
+ADVERSARY_COPIES = 1     # adversarial: tuples per extrema pattern (10 patterns)
 EVAL_FUNCTIONS = 12_800  # loss_guided, adversarial: uniform functions scored after each epoch
 # If set, the same FIXED_EVAL_FUNCTIONS uniform functions (drawn once with FIXED_EVAL_SEED, separate
 # from the training data and the usual seed-12345 test set) are scored after every epoch, so their
@@ -82,9 +83,9 @@ def main() -> None:
     adversarial = SAMPLER == "adversarial"
     if (guided or adversarial) and OHEM_POOL is not None:
         raise ValueError(f"OHEM and the {SAMPLER} sampler can't be combined")
-    if adversarial and BATCH_SIZE != len(VARIANTS):
-        raise ValueError(f"the adversarial sampler trains on its {len(VARIANTS)} tuples; "
-                         f"set BATCH_SIZE = {len(VARIANTS)}")
+    if adversarial and BATCH_SIZE != len(VARIANTS) * ADVERSARY_COPIES:
+        raise ValueError(f"the adversarial sampler trains on its {len(VARIANTS) * ADVERSARY_COPIES} "
+                         f"tuples; set BATCH_SIZE = {len(VARIANTS) * ADVERSARY_COPIES}")
     torch.manual_seed(SEED)
     rng = np.random.default_rng(SEED)
     device = torch_directml.device()
@@ -104,7 +105,7 @@ def main() -> None:
         eval_sampler = LossGuidedSampler(NUM_SAMPLES, device, np.random.default_rng(SEED + 1),
                                          POOL_FACTOR, PREDICTOR_LR)  # only its sample_uniform is used
     if adversarial:
-        tuples = AdversarialTuples(NUM_SAMPLES, device, rng, ADVERSARY_LR)
+        tuples = AdversarialTuples(NUM_SAMPLES, device, rng, ADVERSARY_LR, ADVERSARY_COPIES)
         eval_rng = np.random.default_rng(SEED + 1)
 
     fixed_versions = []  # weight versions scored on the fixed set ("" = the model's own weights)
@@ -141,6 +142,7 @@ def main() -> None:
         "pool_factor": POOL_FACTOR if guided else None,
         "predictor_lr": PREDICTOR_LR if guided else None,
         "adversary_lr": ADVERSARY_LR if adversarial else None,
+        "adversary_copies": ADVERSARY_COPIES if adversarial else None,
         "eval_functions": EVAL_FUNCTIONS if guided or adversarial else None,
         "fixed_eval_functions": FIXED_EVAL_FUNCTIONS,
         "fixed_eval_seed": FIXED_EVAL_SEED if FIXED_EVAL_FUNCTIONS is not None else None,
@@ -276,11 +278,13 @@ def main() -> None:
     if adversarial:
         final_losses = tuple_losses(model, tuples)
         plot_tuples(tuples.params(), final_losses, NUM_SAMPLES, run_dir / "tuples.png",
-                    f"Adversarial tuples after epoch {EPOCHS}")
+                    f"Adversarial tuples after epoch {EPOCHS}",
+                    cols=5 if ADVERSARY_COPIES == 1 else len(VARIANTS))
     print(f"saved weights, training log and chart to {run_dir}")
 
 
-# tuples.csv: one row per tuple and epoch (epoch 0 = the initial tuples); knot positions and
+# tuples.csv: one row per tuple and epoch (epoch 0 = the initial tuples); "variant" is the tuple's
+# position in the batch (copy by copy, 10 patterns each); knot positions and
 # values are space-separated, edges included; "loss" is the tuple's cross-entropy at that point.
 TUPLE_COLUMNS = ["epoch", "variant", "pattern", "label", "loss", "knot_x", "knot_y", "g", "h"]
 

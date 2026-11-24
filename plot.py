@@ -268,22 +268,26 @@ def plot_comparison(run_dirs: list[Path], png_path: Path, setting: str, title: s
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
 
 
-def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: Path, title: str) -> None:
+def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: Path, title: str,
+                cols: int = 5) -> None:
     """Draw the adversarial tuples (data.FunctionParams, one panel each) and save a PNG.
 
     Each panel shows the function at fine resolution (line) and at the network's num_samples
     sample points (dots), so features that fall between samples are visible. The faint
     horizontal lines at 1/3 and 2/3 are the borders of the valley, edge and peak bands.
+    Panels fill row by row, cols per row; with more than 5 columns the panels are smaller and
+    their titles shorter.
     """
     import numpy as np  # local imports: only needed here
     from data import evaluate_params
 
     fine = np.linspace(0.0, 1.0, 4000)
     grid = np.linspace(0.0, 1.0, num_samples)
-    cols = 5
     rows = math.ceil(len(params) / cols)
+    compact = cols > 5
     with rc_context(RC):
-        fig = Figure(figsize=(13, 2.6 * rows + 0.8), dpi=150, facecolor=SURFACE)
+        size = (1.9 * cols, 1.7 * rows + 1.0) if compact else (13, 2.6 * rows + 0.8)
+        fig = Figure(figsize=size, dpi=150, facecolor=SURFACE)
         axes = fig.subplots(rows, cols, sharex=True, sharey=True, squeeze=False).ravel()
         for ax, p, loss in zip(axes, params, losses):
             ax.set_facecolor(SURFACE)
@@ -293,8 +297,12 @@ def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: P
             ax.plot(fine, evaluate_params(p, fine), color=LOSS_COLOR, linewidth=1,
                     solid_capstyle="round", zorder=3)
             peaks = p.pattern.count("P")
-            ax.set_title(f"{p.pattern or '(none)'}  ·  {peaks} peak{'s' if peaks != 1 else ''}  ·  "
-                         f"loss {loss:.3g}", fontsize=9, color=TEXT_SECONDARY, loc="left")
+            if compact:
+                ax.set_title(f"{p.pattern or '(none)'}  ·  {loss:.2g}", fontsize=8,
+                             color=TEXT_SECONDARY, loc="left")
+            else:
+                ax.set_title(f"{p.pattern or '(none)'}  ·  {peaks} peak{'s' if peaks != 1 else ''}  ·  "
+                             f"loss {loss:.3g}", fontsize=9, color=TEXT_SECONDARY, loc="left")
             ax.set_xlim(0, 1)
             ax.set_ylim(-0.02, 1.02)
             ax.set_xticks([0, 0.5, 1], labels=["0", "0.5", "1"])
@@ -306,12 +314,18 @@ def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: P
             ax.tick_params(colors=AXIS, labelcolor=TEXT_MUTED, length=0, pad=4)
         for ax in axes[len(params):]:
             ax.set_visible(False)
-        fig.suptitle(title, x=0.06, y=0.99, ha="left", fontsize=13, fontweight="semibold", color=TEXT_PRIMARY)
-        fig.text(0.06, 0.93 if rows > 1 else 0.88,
+        # Header and top margin in inches (as fractions of the figure height), so tall grids
+        # don't get a large gap under the title.
+        height = size[1]
+        title_y, subtitle_y = (1 - 0.15 / height, 1 - 0.45 / height) if compact else (0.99, 0.93 if rows > 1 else 0.88)
+        fig.suptitle(title, x=0.06 if not compact else 0.03, y=title_y, ha="left", va="top", fontsize=13,
+                     fontweight="semibold", color=TEXT_PRIMARY)
+        fig.text(0.06 if not compact else 0.03, subtitle_y,
                  f"blue line: function at fine resolution  ·  gray dots: the {num_samples} samples the network sees",
                  ha="left", fontsize=9, color=TEXT_SECONDARY)
-        fig.subplots_adjust(left=0.06, right=0.99, top=0.85 if rows > 1 else 0.72, bottom=0.08,
-                            wspace=0.12, hspace=0.35)
+        top = 1 - 0.95 / height if compact else (0.85 if rows > 1 else 0.72)
+        fig.subplots_adjust(left=0.06 if not compact else 0.03, right=0.99, top=top, bottom=0.08 if not compact else 0.04,
+                            wspace=0.12, hspace=0.35 if not compact else 0.45)
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
 
 
