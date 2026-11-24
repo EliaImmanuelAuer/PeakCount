@@ -12,11 +12,19 @@ has zero slope at every knot, so the function has exactly the intended extrema.
 Knot values come from three bands, which keeps every extremum consistent:
 peaks ~ U[2/3, 1], edges ~ U[1/3, 2/3], valleys ~ U[0, 1/3].
 
-Each function is then warped: with g, h ~ U[-1, 1] drawn per function, the
-result is warp_h(f(warp_g(x))), where warp_c(x) = x * (c * (x - 1) + 1). For
-c in [-1, 1], warp_c is strictly increasing on [0, 1] with warp_c(0) = 0 and
-warp_c(1) = 1, so the warping keeps every peak and valley and the label stays
-correct.
+Each function is then warped: the result is post(f(pre(x))), where pre and post are
+random strictly increasing maps of [0, 1] onto itself, drawn independently per function.
+They keep every peak and valley, so the label stays correct. WARP selects the family:
+
+- "cubic" (default): the cubic w with w(0) = 0, w(1) = 1, w'(0) = alpha, w'(1) = beta,
+  i.e. w(x) = (alpha + beta - 2) x^3 + (3 - 2 alpha - beta) x^2 + alpha x. It is monotone
+  exactly when alpha, beta >= 0 and alpha + beta - sqrt(alpha * beta) <= 3; (alpha, beta)
+  is drawn uniformly from that region (area 6 + 4 pi / sqrt(3)), without rejection: the
+  region is the kite (0,0), (3,0), (2,2), (0,3) plus the sector of the ellipse
+  (alpha-2)^2 + (alpha-2)(beta-2) + (beta-2)^2 <= 3 around (2, 2) beyond the kite.
+  Where w' touches 0, it does so at isolated points, so w is still strictly increasing.
+- "quadratic" (used by all runs before 2026-11-25): w(x) = x * (c * (x - 1) + 1) with
+  c ~ U[-1, 1], the special case alpha = 1 - c, beta = 1 + c.
 
 Knots are not required to keep a minimum distance, so very close knots can make
 a peak invisible on the sample grid; the label is still the intended class.
@@ -27,6 +35,15 @@ from typing import NamedTuple
 import numpy as np
 
 NUM_CLASSES = 3
+
+# Family of the random warps applied before and after the knot curve: "cubic" or "quadratic".
+WARP = "cubic"
+WARP_PARAMS = {"quadratic": 1, "cubic": 2}  # numbers per warp: (c,) or (alpha, beta)
+
+# Areas of the pieces of the admissible (alpha, beta) region of the cubic warp.
+KITE_HALF_AREA = 3.0                      # triangles (0,0),(3,0),(2,2) and (0,0),(2,2),(0,3)
+SECTOR_AREA = 4.0 * np.pi / np.sqrt(3.0)  # elliptic sector around (2, 2)
+CUBIC_REGION_AREA = 2.0 * KITE_HALF_AREA + SECTOR_AREA
 
 # Interior extrema patterns per class; a pattern is chosen uniformly within the class.
 PATTERNS = {
@@ -44,9 +61,43 @@ def smoothstep(t: np.ndarray) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
-def warp(x: np.ndarray, c: float) -> np.ndarray:
-    """x * (c * (x - 1) + 1): strictly increasing map of [0, 1] onto itself for c in [-1, 1]."""
-    return x * (c * (x - 1.0) + 1.0)
+def warp(x: np.ndarray, params: tuple[float, ...]) -> np.ndarray:
+    """Apply a warp of [0, 1]: params = (c,) for the quadratic warp x * (c * (x - 1) + 1), or
+    (alpha, beta) for the cubic warp with slopes alpha at 0 and beta at 1."""
+    if len(params) == 1:
+        (c,) = params
+        return x * (c * (x - 1.0) + 1.0)
+    alpha, beta = params
+    a, b = alpha + beta - 2.0, 3.0 - 2.0 * alpha - beta
+    return x * (alpha + x * (b + x * a))
+
+
+def sample_cubic_warp(rng: np.random.Generator) -> tuple[float, float]:
+    """(alpha, beta) uniform on the region where the cubic warp is monotone, from 3 uniform numbers.
+
+    The first number picks a piece with probability proportional to its area; the other two
+    give a uniform point in it: triangles via reflection into the unit triangle, the sector via
+    a uniform point of a disk sector mapped affinely onto the ellipse."""
+    u0, u1, u2 = rng.random(3)
+    pick = u0 * CUBIC_REGION_AREA
+    if pick < 2.0 * KITE_HALF_AREA:
+        if u1 + u2 > 1.0:
+            u1, u2 = 1.0 - u1, 1.0 - u2
+        if pick < KITE_HALF_AREA:  # triangle (0,0), (3,0), (2,2)
+            return 3.0 * u1 + 2.0 * u2, 2.0 * u2
+        return 2.0 * u1, 2.0 * u1 + 3.0 * u2  # triangle (0,0), (2,2), (0,3)
+    theta = (4.0 * u1 - 2.0) * np.pi / 3.0  # [-2 pi / 3, 2 pi / 3]
+    r = np.sqrt(u2)
+    return 2.0 + 2.0 * r * np.cos(theta - np.pi / 3.0), 2.0 + 2.0 * r * np.cos(theta + np.pi / 3.0)
+
+
+def sample_warp(rng: np.random.Generator) -> tuple[float, ...]:
+    """Parameters of one random warp of the family WARP."""
+    if WARP == "quadratic":
+        return (float(rng.uniform(-1.0, 1.0)),)
+    if WARP == "cubic":
+        return tuple(float(v) for v in sample_cubic_warp(rng))
+    raise ValueError(f"unknown WARP {WARP!r}; use 'cubic' or 'quadratic'")
 
 
 class FunctionParams(NamedTuple):
@@ -55,8 +106,8 @@ class FunctionParams(NamedTuple):
     pattern: str        # interior extrema, e.g. "VPV"
     knot_x: np.ndarray  # sorted knot positions, including the edges 0 and 1
     knot_y: np.ndarray  # knot values
-    g: float            # precomposition warp parameter
-    h: float            # postcomposition warp parameter
+    pre: tuple          # precomposition warp: (c,) quadratic or (alpha, beta) cubic
+    post: tuple         # postcomposition warp, same form
 
 
 def sample_params(pattern: str, rng: np.random.Generator) -> FunctionParams:
@@ -67,20 +118,24 @@ def sample_params(pattern: str, rng: np.random.Generator) -> FunctionParams:
     bands = [EDGE_BAND] + [PEAK_BAND if k == "P" else VALLEY_BAND for k in pattern] + [EDGE_BAND]
     knot_y = np.array([rng.uniform(lo, hi) for lo, hi in bands])
 
-    g, h = rng.uniform(-1.0, 1.0, 2)
-    return FunctionParams(pattern, knot_x, knot_y, float(g), float(h))
+    if WARP == "quadratic":  # both parameters in one call, as in all runs before the cubic warp
+        g, h = rng.uniform(-1.0, 1.0, 2)
+        pre, post = (float(g),), (float(h),)
+    else:
+        pre, post = sample_warp(rng), sample_warp(rng)
+    return FunctionParams(pattern, knot_x, knot_y, pre, post)
 
 
 def evaluate_params(params: FunctionParams, x: np.ndarray) -> np.ndarray:
-    """Values warp_h(f(warp_g(x))) of the function with the given parameters at the points x."""
+    """Values post(f(pre(x))) of the function with the given parameters at the points x."""
     knot_x, knot_y = params.knot_x, params.knot_y
-    u = warp(x, params.g)  # precompose: evaluate the knot curve at warp_g(x)
+    u = warp(x, params.pre)  # precompose: evaluate the knot curve at pre(x)
 
     # Segment index i such that knot_x[i] <= u <= knot_x[i + 1].
     i = np.clip(np.searchsorted(knot_x, u, side="right") - 1, 0, len(knot_x) - 2)
     t = (u - knot_x[i]) / (knot_x[i + 1] - knot_x[i])
     f = knot_y[i] + (knot_y[i + 1] - knot_y[i]) * smoothstep(t)
-    return warp(f, params.h)  # postcompose
+    return warp(f, params.post)  # postcompose
 
 
 def make_function(pattern: str, x: np.ndarray, rng: np.random.Generator) -> np.ndarray:

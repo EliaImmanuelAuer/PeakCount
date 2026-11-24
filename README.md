@@ -75,18 +75,33 @@ Each function is built from **knots**:
    `y_i + (y_{i+1} - y_i)·(3t² − 2t³)`. It is strictly monotone between knots
    and has zero slope at each knot, so the function has exactly the intended
    extrema.
-5. Warp the function. Draw `g, h ~ U[-1, 1]` independently for each function
-   and use `warp_h(f(warp_g(x)))` with `warp_c(x) = x·(c·(x − 1) + 1)`. For
-   `c ∈ [-1, 1]`, `warp_c` is strictly increasing on `[0, 1]` and keeps `0` and
-   `1` fixed. Precomposing therefore only shifts the x-positions, and
-   postcomposing only distorts the values in `[0, 1]`. All peaks and valleys
-   are kept, so the label stays correct.
+5. Warp the function: `post(f(pre(x)))`, where `pre` and `post` are random,
+   strictly increasing maps of `[0, 1]` onto itself, drawn independently for
+   each function. Precomposing only shifts the x-positions, and postcomposing
+   only distorts the values in `[0, 1]`. All peaks and valleys are kept, so the
+   label stays correct. `WARP` in [`data.py`](data.py) selects the family:
+   - `"cubic"` (default since 2026-11-25): the cubic `w` with `w(0) = 0`,
+     `w(1) = 1`, `w′(0) = α`, `w′(1) = β`, i.e.
+     `w(x) = (α+β−2)x³ + (3−2α−β)x² + αx`. It is monotone exactly when
+     `α, β ≥ 0` and `α + β − √(αβ) ≤ 3`, a region of area `6 + 4π/√3 ≈ 13.26`
+     (an ellipse in `(√α, √β)`). `(α, β)` is drawn uniformly from it without
+     rejection: the region splits into the kite `(0,0), (3,0), (2,2), (0,3)`
+     and the sector of the ellipse `(α−2)² + (α−2)(β−2) + (β−2)² ≤ 3` around
+     `(2, 2)` beyond the kite. Each sample uses three uniform numbers: one picks
+     a piece by area, two give a point in it.
+   - `"quadratic"` (all runs before 2026-11-25): `w(x) = x·(c·(x − 1) + 1)`
+     with `c ~ U[-1, 1]`, the special case `α = 1 − c`, `β = 1 + c`. With this
+     setting the generator reproduces those runs' data exactly.
 6. Sample at 284 evenly spaced points (256 in the two runs from 2026-11-22).
 
 Knots very close together, or a warping that squeezes a narrow peak further,
 can make a peak disappear between two sample points. The label is still the
-intended class. In a check of 12,800 functions, 99.98% of labels matched the
-number of peaks counted in the samples.
+intended class. On the 51,200 test functions (seed 12345), 99.98% of labels
+match the number of peaks counted in the samples with the quadratic warp
+(11 differ) and 99.93% with the cubic warp (37 differ).
+
+**All results below used the quadratic warp** (the two runs from 2026-11-22
+used no warp at all).
 
 ## Training
 
@@ -101,7 +116,7 @@ constants at the top of the file:
 | Optimizer | Adam from [`optim.py`](optim.py), learning rate 1e-3 |
 | Optimizer | Adam (`OPTIMIZER = "adam"`). Optionally Adam with AMSGrad (`"adam_amsgrad"`), Schedule-Free AdamW (`"schedule_free_adamw"`, Defazio et al. 2024, linear warmup over `SF_WARMUP_FRACTION` of all steps; the saved `model.pt` holds its averaged weights x, while the logged training accuracy is measured at its gradient point y) or SGD with momentum (`"sgd"`, `SGD_MOMENTUM`). All run fully on DirectML |
 | Channels per conv layer | 32 (`CHANNELS`) |
-| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, see [`adversary.py`](adversary.py)): `ADVERSARY_COPIES` parameter tuples per extrema pattern (default 1), each drawn like a normal training function, form the batch (needs `BATCH_SIZE = 10 * ADVERSARY_COPIES`). After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands, g and h via tanh), so they always stay valid |
+| Sampling of training functions | Uniform (`SAMPLER = "uniform"`). Optionally loss-guided (`SAMPLER = "loss_guided"`, see [`sampler.py`](sampler.py)): three small networks (one per class, parameters → 32 → ReLU → 1) learn the CNN's per-function log-loss from the function parameters. Each batch keeps a uniform class mix, and within each class it is sampled without replacement from a pool of `POOL_FACTOR` candidates per slot, with probability proportional to the predicted loss. Or adversarial (`SAMPLER = "adversarial"`, see [`adversary.py`](adversary.py)): `ADVERSARY_COPIES` parameter tuples per extrema pattern (default 1), each drawn like a normal training function, form the batch (needs `BATCH_SIZE = 10 * ADVERSARY_COPIES`). After each backward pass, the network takes its descent step and Adam (`ADVERSARY_LR`) takes one ascent step on the tuples, which increases their loss. The tuples are reparametrized (knot gaps via softmax, values via sigmoid into their bands; quadratic warps via tanh, cubic warps via a direction and a radius in `(√α, √β)` inside the ellipse, without sin/cos because DirectML computes those only to about 6·10⁻⁵), so they always stay valid. The loss-guided predictors get the warp parameters as inputs (`c` per warp, or `α, β` per warp) |
 | Online hard example mining | Off (`OHEM_POOL = None`). If set, each step scores `OHEM_POOL` fresh candidates without gradients and trains on the `BATCH_SIZE` with the highest loss |
 | Loss | Cross-entropy (`LOSS = "cross_entropy"`). Optionally focal loss (`LOSS = "focal"`, focusing parameter `FOCAL_GAMMA`, see [`losses.py`](losses.py)) |
 | Seed | 0 |
@@ -111,15 +126,16 @@ Each run gets its own folder, named after its start time:
 ```
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
-              learning rate, optimizer, momentum, sf_warmup_steps, seed, num_samples,
+              learning rate, optimizer, momentum, sf_warmup_steps, seed, warp, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
               pool_factor, predictor_lr, adversary_lr, eval_functions,
               fixed_eval_functions, fixed_eval_seed)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
-  tuples.csv  adversarial sampler only: the ten tuples after every epoch
-              (epoch 0 = start), with each tuple's loss
+  tuples.csv  adversarial sampler only: the tuples after every epoch
+              (epoch 0 = start), with each tuple's loss; warp parameters in
+              the columns pre and post (g and h in runs before the cubic warp)
   tuples.png  adversarial sampler only: the final ten functions with their samples
 ```
 

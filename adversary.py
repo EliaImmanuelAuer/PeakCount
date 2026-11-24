@@ -12,7 +12,13 @@ The tuples are stored as unconstrained numbers and mapped to valid parameters, s
 ascent step yields a valid function of the same pattern:
   knot gaps   = softmax(a)                      (sorted knots, edges at 0 and 1)
   knot values = band_low + band_width * sigmoid(b)
-  g, h        = tanh(c)
+  warps (c)   = data.WARP "quadratic": c = tanh(.) for each warp;
+                "cubic": for each warp, two numbers give a direction t = sigmoid(.) and a radius
+                rho = sigmoid(.) in the coordinates u = sqrt(alpha), v = sqrt(beta), where the
+                monotone region is the ellipse quadrant u^2 - uv + v^2 <= 3:
+                (u, v) = rho * L(t) * (1 - t, t), L(t) = sqrt(3 / ((1-t)^2 - (1-t) t + t^2))
+                (no sin/cos: DirectML computes those only to ~6e-5, which could push warps on
+                the boundary slightly outside the monotone region)
 The functions are evaluated in torch (differentiable, on the training device) with the same
 formula as data.evaluate_params.
 """
@@ -20,6 +26,7 @@ formula as data.evaluate_params.
 import numpy as np
 import torch
 
+import data
 from data import EDGE_BAND, PATTERNS, PEAK_BAND, VALLEY_BAND, FunctionParams, sample_params
 from optim import Adam
 
@@ -29,16 +36,39 @@ MAX_GAPS = MAX_KNOTS - 1
 EPS = 1e-6  # keeps the initial values strictly inside their open ranges
 
 
+def _logit(s):
+    s = np.clip(s, EPS, 1.0 - EPS)
+    return np.log(s / (1.0 - s))
+
+
+def _ellipse_scale(t):
+    """L(t) such that L(t) * (1 - t, t) lies on the ellipse u^2 - uv + v^2 = 3 (numpy or torch)."""
+    root = torch.sqrt if torch.is_tensor(t) else np.sqrt
+    return root(3.0 / ((1.0 - t) ** 2 - (1.0 - t) * t + t * t))
+
+
+def _encode_warp(params: tuple, warp: str) -> list[float]:
+    """Unconstrained numbers for one warp's parameters (inverse of AdversarialTuples._warps)."""
+    if warp == "quadratic":
+        return [float(np.arctanh(np.clip(params[0], -1.0 + EPS, 1.0 - EPS)))]
+    u, v = np.sqrt(params[0]), np.sqrt(params[1])
+    t = v / (u + v) if u + v > 0 else 0.5
+    rho = (u + v) / _ellipse_scale(t)
+    return [float(_logit(t)), float(_logit(rho))]
+
+
 class AdversarialTuples:
     def __init__(self, num_samples: int, device, rng: np.random.Generator, learning_rate: float,
                  copies: int = 1):
         variants = VARIANTS * copies
         n = len(variants)
+        self.warp = data.WARP
+        per_warp = data.WARP_PARAMS[self.warp]
         self.labels = np.array([label for label, _ in variants], dtype=np.int64)
         self.patterns = [pattern for _, pattern in variants]
         a = np.zeros((n, MAX_GAPS))
         b = np.zeros((n, MAX_KNOTS))
-        c = np.zeros((n, 2))
+        c = np.zeros((n, 2 * per_warp))  # pre warp, then post warp
         gap_mask = np.zeros((n, MAX_GAPS))
         interior_mask = np.zeros((n, MAX_KNOTS))  # knots 1 .. K-2: the interior extrema
         band_low = np.zeros((n, MAX_KNOTS))
@@ -55,7 +85,7 @@ class AdversarialTuples:
                 band_low[t, j], band_width[t, j] = lo, hi - lo
                 s = np.clip((params.knot_y[j] - lo) / (hi - lo), EPS, 1.0 - EPS)
                 b[t, j] = np.log(s / (1.0 - s))
-            c[t] = np.arctanh(np.clip([params.g, params.h], -1.0 + EPS, 1.0 - EPS))
+            c[t] = _encode_warp(params.pre, self.warp) + _encode_warp(params.post, self.warp)
 
         def tensor(v):
             return torch.tensor(v, dtype=torch.float32, device=device)
@@ -73,19 +103,40 @@ class AdversarialTuples:
         self.labels_device = torch.from_numpy(self.labels).to(device)
         self.optimizer = Adam([self.a, self.b, self.c], lr=learning_rate)
 
+    def _warps(self):
+        """Pre and post warp parameters as tensors: (n, 1) each for "quadratic" (c), (n, 2) each
+        for "cubic" (alpha, beta)."""
+        if self.warp == "quadratic":
+            c = torch.tanh(self.c)
+            return c[:, :1], c[:, 1:]
+        out = []
+        for k in (0, 2):
+            t = torch.sigmoid(self.c[:, k:k + 1])
+            lam = torch.sigmoid(self.c[:, k + 1:k + 2]) * _ellipse_scale(t)
+            out.append(torch.cat(((lam * (1.0 - t)) ** 2, (lam * t) ** 2), dim=1))
+        return out[0], out[1]
+
+    @staticmethod
+    def _apply_warp(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+        """data.warp in torch, for each tuple: w is (n, 1) = c or (n, 2) = (alpha, beta)."""
+        if w.shape[1] == 1:
+            return x * (w * (x - 1.0) + 1.0)
+        alpha, beta = w[:, :1], w[:, 1:]
+        return x * (alpha + x * ((3.0 - 2.0 * alpha - beta) + x * (alpha + beta - 2.0)))
+
     def _parameters(self):
-        """Valid parameters (knot_x, knot_y, g, h) as tensors; padded knots sit at x = 1."""
+        """Valid parameters (knot_x, knot_y, pre, post) as tensors; padded knots sit at x = 1."""
         logits = self.a * self.gap_mask + (self.gap_mask - 1.0) * 1e4  # padded gaps -> exp = 0
         gaps = torch.softmax(logits, dim=1)
         knot_x = torch.cat((torch.zeros_like(gaps[:, :1]), gaps @ self.cumsum), dim=1)
         knot_y = self.band_low + self.band_width * torch.sigmoid(self.b)
-        gh = torch.tanh(self.c)
-        return knot_x, knot_y, gh[:, :1], gh[:, 1:]
+        pre, post = self._warps()
+        return knot_x, knot_y, pre, post
 
     def functions(self) -> torch.Tensor:
         """The tuples' functions sampled on the grid, (tuples, num_samples), differentiable in the tuples."""
-        knot_x, knot_y, g, h = self._parameters()
-        u = self.x * (g * (self.x - 1.0) + 1.0)  # warp_g(x), (n, num_samples)
+        knot_x, knot_y, pre, post = self._parameters()
+        u = self._apply_warp(self.x, pre)  # pre(x), (n, num_samples)
         # Segment index: number of interior knots at or left of u (as in data.evaluate_params).
         below = (knot_x[:, None, :] <= u[:, :, None]).float() * self.interior_mask
         segment = below.sum(dim=2)                                         # (n, num_samples)
@@ -96,7 +147,7 @@ class AdversarialTuples:
         y1 = (one_hot * knot_y[:, None, 1:]).sum(dim=2)
         t = ((u - x0) / (x1 - x0).clamp_min(1e-30)).clamp(0.0, 1.0)
         f = y0 + (y1 - y0) * t * t * (3.0 - 2.0 * t)
-        return f * (h * (f - 1.0) + 1.0)  # warp_h(f)
+        return self._apply_warp(f, post)  # post(f)
 
     def zero_grad(self) -> None:
         self.optimizer.zero_grad()
@@ -110,9 +161,10 @@ class AdversarialTuples:
     def params(self) -> list[FunctionParams]:
         """Current tuples as data.FunctionParams (numpy, float64), in batch order."""
         with torch.no_grad():
-            knot_x, knot_y, g, h = (v.cpu().double().numpy() for v in self._parameters())
+            knot_x, knot_y, pre, post = (v.cpu().double().numpy() for v in self._parameters())
         out = []
         for t, pattern in enumerate(self.patterns):
             k = len(pattern) + 2
-            out.append(FunctionParams(pattern, knot_x[t, :k], knot_y[t, :k], float(g[t, 0]), float(h[t, 0])))
+            out.append(FunctionParams(pattern, knot_x[t, :k], knot_y[t, :k],
+                                      tuple(float(v) for v in pre[t]), tuple(float(v) for v in post[t])))
         return out

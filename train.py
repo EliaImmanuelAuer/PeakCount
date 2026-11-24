@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import torch_directml
 
 from adversary import VARIANTS, AdversarialTuples
+import data
 from data import generate_batch
 from losses import focal_loss
 from model import NUM_SAMPLES, PeakCNN
@@ -133,6 +134,7 @@ def main() -> None:
         "momentum": SGD_MOMENTUM if OPTIMIZER == "sgd" else None,
         "sf_warmup_steps": sf_warmup_steps,
         "seed": SEED,
+        "warp": data.WARP,
         "num_samples": NUM_SAMPLES,
         "channels": CHANNELS,
         "loss": LOSS,
@@ -285,8 +287,9 @@ def main() -> None:
 
 # tuples.csv: one row per tuple and epoch (epoch 0 = the initial tuples); "variant" is the tuple's
 # position in the batch (copy by copy, 10 patterns each); knot positions and
-# values are space-separated, edges included; "loss" is the tuple's cross-entropy at that point.
-TUPLE_COLUMNS = ["epoch", "variant", "pattern", "label", "loss", "knot_x", "knot_y", "g", "h"]
+# values are space-separated, edges included; "pre" and "post" are the warp parameters (c, or
+# alpha and beta); "loss" is the tuple's cross-entropy at that point.
+TUPLE_COLUMNS = ["epoch", "variant", "pattern", "label", "loss", "knot_x", "knot_y", "pre", "post"]
 
 
 def tuple_losses(model, tuples) -> list[float]:
@@ -299,7 +302,7 @@ def write_tuples(writer, epoch: int, model, tuples) -> None:
     for k, (p, label, loss) in enumerate(zip(tuples.params(), tuples.labels, tuple_losses(model, tuples))):
         writer.writerow([epoch, k, p.pattern, int(label), f"{loss:.6g}",
                          " ".join(f"{v:.9g}" for v in p.knot_x), " ".join(f"{v:.9g}" for v in p.knot_y),
-                         f"{p.g:.9g}", f"{p.h:.9g}"])
+                         " ".join(f"{v:.9g}" for v in p.pre), " ".join(f"{v:.9g}" for v in p.post)])
 
 
 def evaluate_set(model, functions: torch.Tensor, labels: torch.Tensor, device, chunk: int = 1024):

@@ -9,14 +9,17 @@ replacement with probability proportional to the predicted loss. Only the chosen
 parameters are turned into functions.
 
 Parameter encoding per class (fixed size, zero-padded to the class's longest pattern):
-pattern one-hot | gaps between neighbouring knots (incl. the edges) | knot values | g, h.
-Input sizes: 0 peaks 2+2+3+2 = 9, 1 peak 4+4+5+2 = 15, 2 peaks 4+6+7+2 = 19.
+pattern one-hot | gaps between neighbouring knots (incl. the edges) | knot values |
+pre- and postcomposition warp parameters (c each for the quadratic warp, alpha and beta each
+for the cubic warp). Input sizes with the cubic warp: 0 peaks 2+2+3+4 = 11, 1 peak
+4+4+5+4 = 17, 2 peaks 4+6+7+4 = 21 (quadratic: 2 fewer each).
 """
 
 import numpy as np
 import torch
 import torch.nn as nn
 
+import data
 from data import NUM_CLASSES, PATTERNS, FunctionParams, evaluate_params, sample_params
 from optim import Adam
 
@@ -27,7 +30,7 @@ MIN_LOSS = 1e-6  # floor before taking the log of a per-function loss
 def num_inputs(label: int) -> int:
     patterns = PATTERNS[label]
     max_interior = max(len(p) for p in patterns)
-    return len(patterns) + (max_interior + 1) + (max_interior + 2) + 2
+    return len(patterns) + (max_interior + 1) + (max_interior + 2) + 2 * data.WARP_PARAMS[data.WARP]
 
 
 def encode(params: FunctionParams, label: int) -> np.ndarray:
@@ -40,7 +43,7 @@ def encode(params: FunctionParams, label: int) -> np.ndarray:
     gaps[: len(params.knot_x) - 1] = np.diff(params.knot_x)
     values = np.zeros(max_interior + 2)
     values[: len(params.knot_y)] = params.knot_y
-    return np.concatenate((one_hot, gaps, values, [params.g, params.h]))
+    return np.concatenate((one_hot, gaps, values, params.pre, params.post))
 
 
 class LossPredictor(nn.Module):
