@@ -716,6 +716,21 @@ one panel per pattern), from `analysis/pca_features.py` and
 - One and two peaks overlap in this view, although the model separates them
   at 99.75%.
 
+### LDA
+
+[`features/lda.png`](features/lda.png), from `analysis/lda_features.py`. The
+two discriminant directions were fitted on 51,200 separate functions (seed
+54321) and applied to the test set; axes in units of the pooled within-class
+standard deviation, without the 5 dead channels.
+
+- Three clearly separated clusters at (5.5, 1.6), (−0.4, −3.5) and (−5.1, 2.0)
+  for 0 / 1 / 2 peaks. LD1 (75% of the separation) orders them by peak count,
+  LD2 (25%) separates one peak from both extremes.
+- Assigning each test function to the nearest class centre in this plane gives
+  99.40%, close to the model's 99.75%.
+- The 0- and 2-peak clusters never touch, matching the model's errors (2 → 1
+  and 1 → 0 only, no 0 ↔ 2 confusion).
+
 ## License
 
 [MIT](LICENSE)
