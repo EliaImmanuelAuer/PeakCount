@@ -688,6 +688,34 @@ logs) and [`comparisons/warp_600_fixed.png`](comparisons/warp_600_fixed.png)
 [`runs/2026-11-25_01-03-41/`](runs/2026-11-25_01-03-41/) (quadratic),
 [`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/) (cubic).
 
+## Feature visualizations
+
+Projections of the 32 features of the 600-epoch cubic-warp model
+([`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/)): the output of the
+conv stack, i.e. the input of the final linear layer, for the 51,200 cubic test
+functions (seed 12345, minimum knot distance 0.05). Colours: blue / green / red
+for 0 / 1 / 2 true peaks, shades for the patterns within a class. The scripts
+are in [`analysis/`](analysis/) and are run from the project folder, e.g.
+`python analysis/pca_features.py . runs/2026-11-25_03-00-28 features/pca_panels.png`.
+5 of the 32 channels are 0 for every test function (dead ReLU channels).
+
+### PCA
+
+[`features/pca.png`](features/pca.png) (one scatter) and
+[`features/pca_panels.png`](features/pca_panels.png) (explained variance and
+one panel per pattern), from `analysis/pca_features.py` and
+`analysis/pca_single.py` (raw features, centered).
+
+- PC1 explains 66.8% of the variance, PC2 10.9%; 5 components cover 90%.
+- PC1 measures roughly how much peak signal a function contains: the class
+  means are −18.7 / −1.6 / 20.6 for 0 / 1 / 2 peaks, and within the one-peak
+  functions PC1 correlates with the peak's rise (+0.62).
+- All functions without a peak collapse onto almost one point.
+- PC2 encodes where a single peak is (correlation +0.86 with its position
+  after the pre-warp), which splits the one-peak functions into two lobes.
+- One and two peaks overlap in this view, although the model separates them
+  at 99.75%.
+
 ## License
 
 [MIT](LICENSE)

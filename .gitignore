@@ -11,3 +11,6 @@ __pycache__/
 
 # Data
 data/
+
+# Intermediate results of analysis/ scripts
+*.npz
