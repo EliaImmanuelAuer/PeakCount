@@ -55,6 +55,12 @@ EVAL_FUNCTIONS = 12_800  # loss_guided, adversarial: uniform functions scored af
 # separately. Adds columns to log.csv; the time it takes is not counted in "seconds". None = off.
 FIXED_EVAL_FUNCTIONS = None
 FIXED_EVAL_SEED = 2026
+# If True (uniform sampler only), every training batch is also scored just before its update, and the
+# epoch means go to log.csv: for schedule_free_adamw with x, y and z (columns train_loss_x,
+# train_accuracy_x, ...; the y values equal the training log's own loss and accuracy), otherwise with
+# the model's weights. The extra forward passes for x and z are included in "seconds" (on the UHD 620
+# about 8 s per 200-step epoch), so "seconds" is then not comparable with runs without BATCH_SCORES.
+BATCH_SCORES = False
 PROJECT_DIR = Path(__file__).resolve().parent
 # Each run gets runs/<date>_<time>/ with config.json, model.pt, log.csv and chart.png.
 RUNS_DIR = PROJECT_DIR / "runs"
@@ -82,6 +88,8 @@ def main() -> None:
         raise ValueError(f"unknown SAMPLER {SAMPLER!r}; use 'uniform', 'loss_guided' or 'adversarial'")
     guided = SAMPLER == "loss_guided"
     adversarial = SAMPLER == "adversarial"
+    if BATCH_SCORES and (guided or adversarial or OHEM_POOL is not None):
+        raise ValueError("BATCH_SCORES works only with the uniform sampler and without OHEM")
     if (guided or adversarial) and OHEM_POOL is not None:
         raise ValueError(f"OHEM and the {SAMPLER} sampler can't be combined")
     if adversarial and BATCH_SIZE != len(VARIANTS) * ADVERSARY_COPIES:
@@ -117,6 +125,9 @@ def main() -> None:
         fixed_versions = ["x", "y", "z"] if schedule_free else [""]
         fixed_model = copy.deepcopy(model)  # holds the weights being scored (no RNG use)
     fixed_columns = [f"fixed_{m}{'_' + v if v else ''}" for v in fixed_versions for m in ("loss", "accuracy")]
+    score_versions = (["x", "y", "z"] if schedule_free else [""]) if BATCH_SCORES else []
+    score_models = {v: copy.deepcopy(model) for v in ("x", "z")} if BATCH_SCORES and schedule_free else {}
+    score_columns = [f"train_{m}{'_' + v if v else ''}" for v in score_versions for m in ("loss", "accuracy")]
 
     run_dir = RUNS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}"
     run_dir.mkdir(parents=True)
@@ -149,12 +160,13 @@ def main() -> None:
         "eval_functions": EVAL_FUNCTIONS if guided or adversarial else None,
         "fixed_eval_functions": FIXED_EVAL_FUNCTIONS,
         "fixed_eval_seed": FIXED_EVAL_SEED if FIXED_EVAL_FUNCTIONS is not None else None,
+        "batch_scores": BATCH_SCORES,
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
     with open(log_path, "w", newline="") as log_file, ExitStack() as files:
         log = csv.writer(log_file)
-        log.writerow(LOG_COLUMNS + fixed_columns)
+        log.writerow(LOG_COLUMNS + fixed_columns + score_columns)
         if adversarial:
             tuples_file = files.enter_context(open(run_dir / "tuples.csv", "w", newline=""))
             tuples_log = csv.writer(tuples_file)
@@ -170,6 +182,7 @@ def main() -> None:
             total_correct = 0
             total_seen = 0         # scored functions (= trained functions without OHEM)
             total_trained = 0
+            score_sums = {v: [0.0, 0] for v in score_versions}  # summed loss, correct count
 
             for _ in range(steps_per_epoch):
                 if adversarial:
@@ -203,6 +216,8 @@ def main() -> None:
                     objective = cross_entropy
                 else:
                     objective = focal_loss(logits, y_train, FOCAL_GAMMA)
+                if BATCH_SCORES:
+                    score_batch(model, optimizer, score_models, logits, x_train, y_train, score_sums)
 
                 optimizer.zero_grad()
                 if adversarial:
@@ -248,6 +263,8 @@ def main() -> None:
                 optimizer.train()
 
             seconds = time.perf_counter() - start
+            score_values = [f"{v:.6f}" for loss_sum, correct in score_sums.values()
+                            for v in (loss_sum / total_trained, correct / total_trained)]
             functions_seen += total_trained
 
             fixed_values = []
@@ -267,7 +284,7 @@ def main() -> None:
                 functions_seen,
                 datetime.now().isoformat(timespec="seconds"),
                 predictor_corr,
-            ] + fixed_values)
+            ] + fixed_values + score_values)
             log_file.flush()
 
             print(
@@ -304,6 +321,27 @@ def write_tuples(writer, epoch: int, model, tuples) -> None:
         writer.writerow([epoch, k, p.pattern, int(label), f"{loss:.6g}",
                          " ".join(f"{v:.9g}" for v in p.knot_x), " ".join(f"{v:.9g}" for v in p.knot_y),
                          " ".join(f"{v:.9g}" for v in p.pre), " ".join(f"{v:.9g}" for v in p.post)])
+
+
+def score_batch(model, optimizer, score_models, logits, x, y, sums) -> None:
+    """Add the batch's summed cross-entropy and correct count for each weight version to sums.
+
+    The gradient point (y, or the model's weights) uses the training forward pass; x and z (schedule-free
+    only) get extra forward passes with their weights copied into score_models. All values are read back
+    in one transfer, with no extra sync."""
+    with torch.no_grad():
+        stats = [F.cross_entropy(logits, y, reduction="sum"), (logits.argmax(dim=1) == y).sum().float()]
+        for v, m in score_models.items():
+            for p_score, p in zip(m.parameters(), model.parameters()):
+                state = optimizer.state[p]
+                p_score.copy_(state[v] if v in state else p)  # before the first step x = y = z
+            out = m(x)
+            stats += [F.cross_entropy(out, y, reduction="sum"), (out.argmax(dim=1) == y).sum().float()]
+        values = torch.stack(stats).cpu().tolist()
+    names = ["y", "x", "z"] if score_models else [""]
+    for k, v in enumerate(names):
+        sums[v][0] += values[2 * k]
+        sums[v][1] += int(values[2 * k + 1])
 
 
 def evaluate_set(model, functions: torch.Tensor, labels: torch.Tensor, device, chunk: int = 1024):

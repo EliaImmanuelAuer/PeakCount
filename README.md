@@ -152,7 +152,7 @@ runs/<date>_<time>/
               min_knot_distance, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
               pool_factor, predictor_lr, adversary_lr, eval_functions,
-              fixed_eval_functions, fixed_eval_seed)
+              fixed_eval_functions, fixed_eval_seed, batch_scores)
   model.pt    weights (state_dict), overwritten after every epoch
   log.csv     one row per epoch
   chart.png   drawn after the last epoch
@@ -177,6 +177,7 @@ progress. The log has these columns:
 | `timestamp` | Local time when the epoch ended (ISO 8601) |
 | `predictor_corr` | Loss-guided sampler only: correlation between predicted and actual log-loss (see below) |
 | `fixed_loss`, `fixed_accuracy` | Only with `FIXED_EVAL_FUNCTIONS`: loss and accuracy of the model's weights on a fixed set (see below). For Schedule-Free AdamW instead `fixed_loss_x`, `fixed_accuracy_x`, and the same for `y` and `z` |
+| `train_loss`, `train_accuracy` | Only with `BATCH_SCORES`: loss and accuracy on the epoch's training batches, each scored just before its update. For Schedule-Free AdamW instead `train_loss_x`, `train_accuracy_x`, and the same for `y` (equal to `loss` and `accuracy`) and `z` |
 
 With OHEM, `loss` and `accuracy` are measured over all scored candidates, so
 they stay comparable with runs without OHEM. `objective` refers to the selected
@@ -199,6 +200,15 @@ noise between epochs, so every change comes from the weights. For
 Schedule-Free AdamW, the averaged weights x, the gradient point y and the
 plain iterate z are scored separately. This evaluation runs after the epoch's
 time is taken, so `seconds` stays comparable with other runs.
+
+With `BATCH_SCORES = True` (uniform sampler only, default `False`), every
+training batch is also scored just before its update; for Schedule-Free
+AdamW with x, y and z, which needs two extra forward passes per step. Together
+with the fixed set, that gives 12 values per epoch (x, y, z × loss, accuracy ×
+fixed set, training data). The extra passes cost about 8 s per 200-step epoch
+on the UHD 620 and are included in `seconds`, so those runs' times are not
+comparable with others. Timing them separately would need a sync per step,
+which slowed training by about a quarter in a test.
 
 After the last epoch, [`plot.py`](plot.py) draws the log as `chart.png`. The
 chart shows loss (left
