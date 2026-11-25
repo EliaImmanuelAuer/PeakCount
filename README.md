@@ -121,8 +121,9 @@ from the number of peaks counted in the samples for this many functions:
 | Quadratic warp | 11 | 4 |
 | Cubic warp | 37 | 21 |
 
-**All results below used the quadratic warp and no minimum knot distance**
-(the two runs from 2026-11-22 used no warp at all).
+**All results below used the quadratic warp and no minimum knot distance**,
+except the runs from 2026-11-25 onward, which say so (the two runs from
+2026-11-22 used no warp at all).
 
 ## Training
 
@@ -632,6 +633,50 @@ length of the Adam run) its training accuracy averaged 99.89% over the last 5
 epochs, vs 99.86% for Adam. Chart:
 [`comparisons/schedule_free_300.png`](comparisons/schedule_free_300.png). Run:
 [`runs/2026-11-24_16-48-22/`](runs/2026-11-24_16-48-22/).
+
+### 600 epochs: quadratic vs cubic warp
+
+Two 600-epoch runs with the current defaults (batch 64, Adam lr 1e-3, 32
+channels, minimum knot distance 0.05), one with the quadratic and one with the
+cubic warp. After every epoch, each run also scored a fixed set of 12,800
+functions from its own generator (`FIXED_EVAL_FUNCTIONS`), so those curves
+contain no sampling noise. The first 50 epochs of the cubic run are identical
+to the 50-epoch run with the new defaults
+([`runs/2026-11-25_00-45-09/`](runs/2026-11-25_00-45-09/): 98.34% in the last
+epoch). Both final models were evaluated on two test sets of 51,200 functions
+(seed 12345, minimum distance 0.05), one per warp.
+
+| | Quadratic-warp model | Cubic-warp model |
+|---|---|---|
+| Training time (without the fixed-set scoring) | 104.0 min | 104.9 min |
+| Fixed-set accuracy, mean of epochs 501–600 | 99.986% | 99.749% |
+| **Quadratic test set** | 99.998% (1 wrong) | 99.994% (3 wrong) |
+| **Cubic test set** | 96.186% (1,953 wrong) | 99.748% (129 wrong) |
+
+- **With the minimum distance, the quadratic task is practically solved.**
+  Both models make 1 and 3 errors on the quadratic test set (McNemar z = −1.00,
+  not significant). For comparison, the 300-epoch Adam run without the
+  minimum distance made 73 errors on the old quadratic test set, mostly missed
+  narrow peaks and high edges.
+- **The cubic task stays harder.** After 600 epochs the cubic model still
+  makes 129 errors on its own test set. 63 are missed low peaks (rise < 0.03,
+  i.e. peaks flattened by the post-warp), 48 other missed peaks and 10 missed
+  peaks near an edge. Its fixed-set accuracy still rises slowly (99.69% in
+  epochs 301–400, 99.75% in epochs 501–600).
+- **Cubic training transfers, quadratic training doesn't.** The cubic model is
+  as good as the quadratic one on quadratic data, but the quadratic model
+  reaches only 96.19% on cubic data (McNemar z = +41.24). 1,109 of its errors
+  are high edges counted as peaks.
+- **The fixed-set curves still fluctuate from epoch to epoch** (cubic: between
+  about 0.1% and 1% error after epoch 200). Since the set is fixed, these
+  fluctuations come from the weights alone, the jitter of a constant learning
+  rate. Epochs with 0 errors are drawn as one error (1/12,800).
+
+Charts: [`comparisons/warp_600.png`](comparisons/warp_600.png) (training
+logs) and [`comparisons/warp_600_fixed.png`](comparisons/warp_600_fixed.png)
+(fixed sets). Runs:
+[`runs/2026-11-25_01-03-41/`](runs/2026-11-25_01-03-41/) (quadratic),
+[`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/) (cubic).
 
 ## License
 
