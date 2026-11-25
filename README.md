@@ -749,6 +749,21 @@ brings both); they are only used for these analyses and are not in
   their features look like the other class.
 - Distances between the islands, their sizes and shapes carry no meaning.
 
+### t-SNE
+
+[`features/tsne_10k.png`](features/tsne_10k.png), from
+`analysis/tsne_features.py` (a random 10,000 of the test functions, seed 0;
+perplexity 30, PCA initialization, seed 0; 1.4 min).
+
+- Again three separate clusters, ordered 0 – 1 – 2 peaks; that order comes
+  from the PCA initialization.
+- The no-peak cluster splits into monotone and V functions, as in UMAP. Among
+  the 15 nearest neighbours, the same pattern appears for 89.9% / 50.8% /
+  35.0% in the 32-D features of this subset and 89.0% / 47.8% / 34.3% in the
+  layout, slightly more faithful than UMAP.
+- 16 of the 24 errors in the subset lie among functions of the predicted
+  class.
+
 ## License
 
 [MIT](LICENSE)
