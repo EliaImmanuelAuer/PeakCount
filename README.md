@@ -109,6 +109,19 @@ Each function is built from **knots**:
    - `"quadratic"` (all runs before 2026-11-25): `w(x) = x·(c·(x − 1) + 1)`
      with `c ~ U[-1, 1]`, the special case `α = 1 − c`, `β = 1 + c`. With this
      setting the generator reproduces those runs' data exactly.
+   - `"shavgulidze"`: a sample of the Shavgulidze measure on the increasing
+     diffeomorphisms of `[0, 1]`, the image of the Wiener measure under
+     `ξ ↦ w(x) = ∫₀ˣ e^ξ / ∫₀¹ e^ξ` for a Brownian motion `ξ` with variance
+     `σ²t` (`SHAVGULIDZE_SIGMA = 1`). `ξ` is drawn from its Karhunen–Loève
+     expansion `ξ(t) = Σ c_k √2 sin((k−½)πt)/((k−½)π)`, `c_k = σ·Z_k`, truncated
+     to 64 terms (99.7% of the variance at `t = 1`); `w` is integrated with the
+     trapezoidal rule on 2,048 intervals and interpolated linearly. With `σ = 1`
+     the largest slope of a warp is typically 3–5.5 times its smallest (median
+     3.9). Compared with an exact Brownian motion of 8,192 steps, `w(0.1)`,
+     `w(0.5)` and `w(0.9)` have the same distribution (KS `D ≤ 0.013`). The
+     loss-guided and adversarial samplers don't support this warp yet. Drawing
+     the functions takes about 3 times longer than with the cubic warp
+     (20 ms instead of 7 ms per batch of 64).
 6. Sample at 284 evenly spaced points (256 in the two runs from 2026-11-22).
 
 Knots very close together, or a warping that squeezes a narrow peak further,
@@ -120,6 +133,7 @@ from the number of peaks counted in the samples for this many functions:
 |---|---|---|
 | Quadratic warp | 11 | 4 |
 | Cubic warp | 37 | 21 |
+| Shavgulidze warp | – | 6 |
 
 **All results below used the quadratic warp and no minimum knot distance**,
 except the runs from 2026-11-25 onward, which say so (the two runs from
@@ -149,7 +163,7 @@ Each run gets its own folder, named after its start time:
 runs/<date>_<time>/
   config.json training settings (epochs, functions per epoch, batch size,
               learning rate, optimizer, momentum, sf_warmup_steps, seed, warp,
-              min_knot_distance, num_samples,
+              min_knot_distance, shavgulidze_sigma, shavgulidze_terms, num_samples,
               channels, loss, focal_gamma, ohem_pool, sampler,
               pool_factor, predictor_lr, adversary_lr, eval_functions,
               fixed_eval_functions, fixed_eval_seed, batch_scores)

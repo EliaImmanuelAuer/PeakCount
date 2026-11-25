@@ -72,6 +72,8 @@ def _encode_warp(params: tuple, warp: str) -> list[float]:
 class AdversarialTuples:
     def __init__(self, num_samples: int, device, rng: np.random.Generator, learning_rate: float,
                  copies: int = 1):
+        if data.WARP == "shavgulidze":
+            raise ValueError("the adversarial tuples do not support WARP = 'shavgulidze' yet")
         variants = VARIANTS * copies
         n = len(variants)
         self.warp = data.WARP

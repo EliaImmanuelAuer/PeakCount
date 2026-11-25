@@ -88,6 +88,8 @@ def main() -> None:
         raise ValueError(f"unknown SAMPLER {SAMPLER!r}; use 'uniform', 'loss_guided' or 'adversarial'")
     guided = SAMPLER == "loss_guided"
     adversarial = SAMPLER == "adversarial"
+    if (guided or adversarial) and data.WARP == "shavgulidze":
+        raise ValueError(f"the {SAMPLER} sampler does not support WARP = 'shavgulidze' yet")
     if BATCH_SCORES and (guided or adversarial or OHEM_POOL is not None):
         raise ValueError("BATCH_SCORES works only with the uniform sampler and without OHEM")
     if (guided or adversarial) and OHEM_POOL is not None:
@@ -147,6 +149,8 @@ def main() -> None:
         "seed": SEED,
         "warp": data.WARP,
         "min_knot_distance": data.MIN_KNOT_DISTANCE,
+        "shavgulidze_sigma": data.SHAVGULIDZE_SIGMA if data.WARP == "shavgulidze" else None,
+        "shavgulidze_terms": data.SHAVGULIDZE_TERMS if data.WARP == "shavgulidze" else None,
         "num_samples": NUM_SAMPLES,
         "channels": CHANNELS,
         "loss": LOSS,

@@ -25,6 +25,13 @@ They keep every peak and valley, so the label stays correct. WARP selects the fa
   Where w' touches 0, it does so at isolated points, so w is still strictly increasing.
 - "quadratic" (used by all runs before 2026-11-25): w(x) = x * (c * (x - 1) + 1) with
   c ~ U[-1, 1], the special case alpha = 1 - c, beta = 1 + c.
+- "shavgulidze": a sample of the Shavgulidze measure on the increasing diffeomorphisms of
+  [0, 1], the image of the Wiener measure under xi -> w(x) = int_0^x e^xi / int_0^1 e^xi, with
+  xi a Brownian motion (xi(0) = 0, variance SHAVGULIDZE_SIGMA^2 t). xi is drawn from its
+  Karhunen-Loeve expansion xi(t) = sum_k c_k sqrt(2) sin((k - 1/2) pi t) / ((k - 1/2) pi),
+  c_k = sigma * Z_k with Z_k standard normal, truncated to SHAVGULIDZE_TERMS terms (64 keep
+  99.4% of the path's variance). w is integrated with the trapezoidal rule on SHAVGULIDZE_GRID
+  intervals and interpolated linearly, so it is strictly increasing with w(0) = 0, w(1) = 1.
 
 Neighbouring knots (the edges included) keep a horizontal and a vertical distance of at
 least MIN_KNOT_DISTANCE (before warping), drawn without rejection: the distribution is the
@@ -47,9 +54,14 @@ import numpy as np
 
 NUM_CLASSES = 3
 
-# Family of the random warps applied before and after the knot curve: "cubic" or "quadratic".
+# Family of the random warps applied before and after the knot curve: "cubic", "quadratic" or
+# "shavgulidze".
 WARP = "cubic"
-WARP_PARAMS = {"quadratic": 1, "cubic": 2}  # numbers per warp: (c,) or (alpha, beta)
+SHAVGULIDZE_SIGMA = 1.0   # standard deviation of the Brownian motion at t = 1
+SHAVGULIDZE_TERMS = 64    # Karhunen-Loeve terms of the Brownian motion
+SHAVGULIDZE_GRID = 2048   # trapezoidal intervals for the integral of e^xi
+# numbers per warp: (c,), (alpha, beta) or the Karhunen-Loeve coefficients (c_1, ..., c_K)
+WARP_PARAMS = {"quadratic": 1, "cubic": 2, "shavgulidze": SHAVGULIDZE_TERMS}
 
 # Minimum horizontal and vertical distance of neighbouring knots, edges included (0 = none).
 MIN_KNOT_DISTANCE = 0.05
@@ -75,9 +87,35 @@ def smoothstep(t: np.ndarray) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
+_KL_CACHE: dict = {}
+
+
+def _kl_basis(terms: int, grid: int) -> tuple[np.ndarray, np.ndarray]:
+    """Grid t (grid + 1 points) and the Karhunen-Loeve basis sqrt(2) sin((k-1/2) pi t)/((k-1/2) pi)."""
+    if (terms, grid) not in _KL_CACHE:
+        t = np.linspace(0.0, 1.0, grid + 1)
+        freq = (np.arange(1, terms + 1) - 0.5) * np.pi
+        _KL_CACHE[terms, grid] = t, np.sqrt(2.0) * np.sin(np.outer(t, freq)) / freq
+    return _KL_CACHE[terms, grid]
+
+
+def shavgulidze_grid(coefficients) -> tuple[np.ndarray, np.ndarray]:
+    """The Shavgulidze warp with the given Karhunen-Loeve coefficients on its integration grid:
+    (t, w(t)), w normalized to w(0) = 0, w(1) = 1."""
+    t, basis = _kl_basis(len(coefficients), SHAVGULIDZE_GRID)
+    xi = basis @ np.asarray(coefficients, dtype=np.float64)
+    e = np.exp(xi - xi.max())  # the normalization cancels the shift; avoids overflow
+    w = np.concatenate(([0.0], np.cumsum((e[1:] + e[:-1]) / 2.0)))
+    return t, w / w[-1]
+
+
 def warp(x: np.ndarray, params: tuple[float, ...]) -> np.ndarray:
-    """Apply a warp of [0, 1]: params = (c,) for the quadratic warp x * (c * (x - 1) + 1), or
-    (alpha, beta) for the cubic warp with slopes alpha at 0 and beta at 1."""
+    """Apply a warp of [0, 1]: params = (c,) for the quadratic warp x * (c * (x - 1) + 1),
+    (alpha, beta) for the cubic warp with slopes alpha at 0 and beta at 1, or more numbers for
+    a Shavgulidze warp (its Karhunen-Loeve coefficients)."""
+    if len(params) > 2:
+        t, w = shavgulidze_grid(params)
+        return np.interp(x, t, w)
     if len(params) == 1:
         (c,) = params
         return x * (c * (x - 1.0) + 1.0)
@@ -111,7 +149,9 @@ def sample_warp(rng: np.random.Generator) -> tuple[float, ...]:
         return (float(rng.uniform(-1.0, 1.0)),)
     if WARP == "cubic":
         return tuple(float(v) for v in sample_cubic_warp(rng))
-    raise ValueError(f"unknown WARP {WARP!r}; use 'cubic' or 'quadratic'")
+    if WARP == "shavgulidze":
+        return tuple(float(v) for v in SHAVGULIDZE_SIGMA * rng.standard_normal(SHAVGULIDZE_TERMS))
+    raise ValueError(f"unknown WARP {WARP!r}; use 'cubic', 'quadratic' or 'shavgulidze'")
 
 
 class FunctionParams(NamedTuple):
@@ -120,7 +160,7 @@ class FunctionParams(NamedTuple):
     pattern: str        # interior extrema, e.g. "VPV"
     knot_x: np.ndarray  # sorted knot positions, including the edges 0 and 1
     knot_y: np.ndarray  # knot values
-    pre: tuple          # precomposition warp: (c,) quadratic or (alpha, beta) cubic
+    pre: tuple          # precomposition warp: (c,) quadratic, (alpha, beta) cubic, (c_1..c_K) Shavgulidze
     post: tuple         # postcomposition warp, same form
 
 

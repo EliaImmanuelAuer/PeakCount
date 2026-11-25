@@ -60,6 +60,8 @@ class LossPredictor(nn.Module):
 class LossGuidedSampler:
     def __init__(self, num_samples: int, device, rng: np.random.Generator,
                  pool_factor: int, learning_rate: float):
+        if data.WARP == "shavgulidze":
+            raise ValueError("the loss-guided sampler does not support WARP = 'shavgulidze' yet")
         self.x = np.linspace(0.0, 1.0, num_samples)
         self.device = device
         self.rng = rng
