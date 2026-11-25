@@ -731,6 +731,24 @@ standard deviation, without the 5 dead channels.
 - The 0- and 2-peak clusters never touch, matching the model's errors (2 → 1
   and 1 → 0 only, no 0 ↔ 2 confusion).
 
+### UMAP
+
+[`features/umap.png`](features/umap.png), from `analysis/umap_features.py`
+(all 51,200 test functions, n_neighbors 15, min_dist 0.1, seed 0). UMAP and
+t-SNE need `umap-learn` and `scikit-learn` (`pip install umap-learn`, which
+brings both); they are only used for these analyses and are not in
+`requirements.txt`.
+
+- Three completely separate islands, one per peak count.
+- Within a class the patterns are partly sorted. Among the 15 nearest
+  neighbours in the 32-D features, the share with the same pattern is 93.6% /
+  56.5% / 37.1% for 0 / 1 / 2 peaks (chance: 50% / 25% / 25%); the UMAP layout
+  keeps 88.5% / 44.1% / 33.8%. So the features clearly tell monotone functions
+  from V functions, although the task doesn't require it.
+- 92 of the model's 129 errors lie among functions of the class it predicted:
+  their features look like the other class.
+- Distances between the islands, their sizes and shapes carry no meaning.
+
 ## License
 
 [MIT](LICENSE)
