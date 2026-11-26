@@ -47,7 +47,7 @@ with rc_context(RC):
         text.set_color(TEXT_PRIMARY if h.get_marker() in (None, "None", "") else TEXT_SECONDARY)
         if h.get_marker() in (None, "None", ""):
             text.set_fontweight("semibold")
-    fig.suptitle("PCA of the 32 features of the cubic-warp model", x=0.08, y=0.965, ha="left", fontsize=13,
+    fig.suptitle(f"PCA of the 32 features of the cubic-warp model ({d['title_model']})", x=0.08, y=0.965, ha="left", fontsize=13,
                  fontweight="semibold", color=TEXT_PRIMARY)
     fig.text(0.08, 0.925, "51,200 test functions (seed 12345, cubic warp, minimum knot distance 0.05) · run "
              f"{d['run']} · colour: true peak count, shade: pattern · random drawing order",

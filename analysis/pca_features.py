@@ -38,6 +38,8 @@ patterns = np.array(patterns, dtype=object)
 
 dev = torch_directml.device()
 cfg = json.loads((run / "config.json").read_text())
+OPTIMIZER_NAMES = {"adam": "Adam", "adam_amsgrad": "AMSGrad", "schedule_free_adamw": "Schedule-Free AdamW", "sgd": "SGD"}
+optimizer = OPTIMIZER_NAMES.get(cfg["optimizer"], cfg["optimizer"])
 model = PeakCNN(NUM_SAMPLES, cfg["channels"])
 model.load_state_dict(torch.load(run / "model.pt", weights_only=True))
 model.to(dev).eval()
@@ -118,12 +120,12 @@ with rc_context(RC):
                  color=TEXT_SECONDARY)
     axl.text(0.02, 0.05, "gray: all other test functions, for orientation", fontsize=9, color=TEXT_MUTED)
     axl.set_xlim(0, 1); axl.set_ylim(0, 1)
-    fig.suptitle("PCA of the 32 features of the cubic-warp model", x=0.125, y=0.975, ha="left", fontsize=13,
+    fig.suptitle(f"PCA of the 32 features of the cubic-warp model ({optimizer}, {cfg['epochs']} epochs)", x=0.125, y=0.975, ha="left", fontsize=13,
                  fontweight="semibold", color=TEXT_PRIMARY)
-    fig.text(0.125, 0.945, f"run {run.name} (600 epochs) · 51,200 test functions (seed 12345, cubic warp, minimum "
+    fig.text(0.125, 0.945, f"run {run.name} · 51,200 test functions (seed 12345, cubic warp, minimum "
              "knot distance 0.05) · raw features, centered · one panel per pattern", ha="left", fontsize=9,
              color=TEXT_SECONDARY)
     fig.savefig(out, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
 print("saved", out)
 np.savez_compressed(Path(out).with_suffix(".npz"), P=P, var=var, labels=labels, pred=pred, patterns=patterns.astype(str),
-                    run=run.name)
+                    run=run.name, title_model=f"{optimizer}, {cfg['epochs']} epochs")

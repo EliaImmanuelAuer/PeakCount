@@ -31,6 +31,8 @@ for label in lab:
 pats = np.array(pats)
 dev = torch_directml.device()
 cfg = json.loads((run / "config.json").read_text())
+OPTIMIZER_NAMES = {"adam": "Adam", "adam_amsgrad": "AMSGrad", "schedule_free_adamw": "Schedule-Free AdamW", "sgd": "SGD"}
+optimizer = OPTIMIZER_NAMES.get(cfg["optimizer"], cfg["optimizer"])
 model = PeakCNN(NUM_SAMPLES, cfg["channels"])
 model.load_state_dict(torch.load(run / "model.pt", weights_only=True))
 model.to(dev).eval()
@@ -80,7 +82,7 @@ with rc_context(RC):
         text.set_color(TEXT_PRIMARY if heading else TEXT_SECONDARY)
         if heading:
             text.set_fontweight("semibold")
-    fig.suptitle("t-SNE of the 32 features of the cubic-warp model", x=0.08, y=0.965, ha="left", fontsize=13,
+    fig.suptitle(f"t-SNE of the 32 features of the cubic-warp model ({optimizer}, {cfg['epochs']} epochs)", x=0.08, y=0.965, ha="left", fontsize=13,
                  fontweight="semibold", color=TEXT_PRIMARY)
     fig.text(0.08, 0.925, "test functions (seed 12345, cubic warp, minimum distance 0.05) · run "
              f"{run.name} · {N:,} random functions · perplexity 30, PCA initialization, seed 0 · colour: true peak count, shade: pattern",

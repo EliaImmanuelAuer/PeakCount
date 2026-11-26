@@ -781,21 +781,25 @@ task both stay clearly above x. Runs:
 
 ## Feature visualizations
 
-Projections of the 32 features of the 600-epoch cubic-warp model
-([`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/)): the output of the
-conv stack, i.e. the input of the final linear layer, for the 51,200 cubic test
-functions (seed 12345, minimum knot distance 0.05). Colours: blue / green / red
-for 0 / 1 / 2 true peaks, shades for the patterns within a class. The scripts
-are in [`analysis/`](analysis/) and are run from the project folder, e.g.
-`python analysis/pca_features.py . runs/2026-11-25_03-00-28 features/pca_panels.png`.
-5 of the 32 channels are 0 for every test function (dead ReLU channels).
+Projections of the 32 features of 600-epoch cubic-warp models: the output of
+the conv stack, i.e. the input of the final linear layer, for the 51,200 cubic
+test functions (seed 12345, minimum knot distance 0.05). Images of the Adam
+model ([`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/)) are in
+[`features/adam/`](features/adam/). Colours: blue / green / red for 0 / 1 / 2
+true peaks, shades for the patterns within a class. The scripts are in
+[`analysis/`](analysis/) and are run from the project folder, e.g.
+`python analysis/pca_features.py . runs/2026-11-25_03-00-28 features/adam/pca_panels.png`.
+In the Adam model, 5 of the 32 channels are 0 for every test function (dead
+ReLU channels).
 
 ### PCA
 
-[`features/pca.png`](features/pca.png) (one scatter) and
-[`features/pca_panels.png`](features/pca_panels.png) (explained variance and
+[`features/adam/pca.png`](features/adam/pca.png) (one scatter) and
+[`features/adam/pca_panels.png`](features/adam/pca_panels.png) (explained variance and
 one panel per pattern), from `analysis/pca_features.py` and
 `analysis/pca_single.py` (raw features, centered).
+
+Adam model:
 
 - PC1 explains 66.8% of the variance, PC2 10.9%; 5 components cover 90%.
 - PC1 measures roughly how much peak signal a function contains: the class
@@ -809,10 +813,12 @@ one panel per pattern), from `analysis/pca_features.py` and
 
 ### LDA
 
-[`features/lda.png`](features/lda.png), from `analysis/lda_features.py`. The
+[`features/adam/lda.png`](features/adam/lda.png), from `analysis/lda_features.py`. The
 two discriminant directions were fitted on 51,200 separate functions (seed
 54321) and applied to the test set; axes in units of the pooled within-class
 standard deviation, without the 5 dead channels.
+
+Adam model:
 
 - Three clearly separated clusters at (5.5, 1.6), (−0.4, −3.5) and (−5.1, 2.0)
   for 0 / 1 / 2 peaks. LD1 (75% of the separation) orders them by peak count,
@@ -824,11 +830,13 @@ standard deviation, without the 5 dead channels.
 
 ### UMAP
 
-[`features/umap.png`](features/umap.png), from `analysis/umap_features.py`
+[`features/adam/umap.png`](features/adam/umap.png), from `analysis/umap_features.py`
 (all 51,200 test functions, n_neighbors 15, min_dist 0.1, seed 0). UMAP and
 t-SNE need `umap-learn` and `scikit-learn` (`pip install umap-learn`, which
 brings both); they are only used for these analyses and are not in
 `requirements.txt`.
+
+Adam model:
 
 - Three completely separate islands, one per peak count.
 - Within a class the patterns are partly sorted. Among the 15 nearest
@@ -842,9 +850,11 @@ brings both); they are only used for these analyses and are not in
 
 ### t-SNE
 
-[`features/tsne_10k.png`](features/tsne_10k.png), from
+[`features/adam/tsne_10k.png`](features/adam/tsne_10k.png), from
 `analysis/tsne_features.py` (a random 10,000 of the test functions, seed 0;
 perplexity 30, PCA initialization, seed 0; 1.4 min).
+
+Adam model:
 
 - Again three separate clusters, ordered 0 – 1 – 2 peaks; that order comes
   from the PCA initialization.
