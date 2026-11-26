@@ -842,6 +842,19 @@ Adam model:
 - The 0- and 2-peak clusters never touch, matching the model's errors (2 → 1
   and 1 → 0 only, no 0 ↔ 2 confusion).
 
+Schedule-Free model ([`features/schedule_free/lda.png`](features/schedule_free/lda.png),
+28 live channels):
+
+- The same V-shaped arrangement, with the clusters at (4.7, 1.4), (0.3, −2.6)
+  and (−5.1, 1.2); LD1 carries more of the separation (83% instead of 75%).
+  Within the no-peak cluster, monotone and V functions are more clearly apart
+  than in the Adam model.
+- Nearest class centre in this plane: 99.29%, slightly below the Adam model's
+  99.40%, although the Schedule-Free model itself is much better (99.953%
+  instead of 99.748%). So its extra accuracy is not visible in a 2D linear
+  view with equal class covariances; presumably the model's own 32-D linear
+  layer uses directions or cluster shapes that LDA's assumptions miss.
+
 ### UMAP
 
 [`features/adam/umap.png`](features/adam/umap.png), from `analysis/umap_features.py`
