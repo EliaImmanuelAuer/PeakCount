@@ -744,7 +744,8 @@ saved at the end of the runs, so they can't be scored on the test sets.
 | Training batches: error of x / y / z | 0.0009% / 0.0087% / 59.0% | 0.048% / 0.105% / 66.1% |
 
 - **Schedule-Free beats Adam clearly on the cubic task.** On the cubic test set
-  the cubic models make 24 instead of 129 errors (McNemar z = +9.17: 11 wrong
+  the Schedule-Free cubic model has an error of only **0.0469%**: it makes 24
+  instead of Adam's 129 errors (McNemar z = +9.17: 11 wrong
   for both, 118 only with Adam, 13 only with Schedule-Free). The remaining 24
   are mostly missed low peaks (10) and high edges counted as peaks (5). The
   quadratic models also transfer better (1,323 instead of 1,953 errors on cubic
