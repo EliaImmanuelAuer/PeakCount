@@ -749,9 +749,12 @@ evaluated on the two test sets of 51,200 functions used above.
 
 Chart: [`comparisons/schedule_free_600_xyz.png`](comparisons/schedule_free_600_xyz.png), one
 column per run and source (fixed set, training batches), loss on top and error
-rate below, x drawn on top of y and z. On the fixed set, x falls smoothly and
-in steps of single errors, while y keeps jumping from epoch to epoch: the
-averaging in x is directly visible. Runs:
+rate below, x drawn on top of y and z, and the 600-epoch Adam run with the
+same warp in yellow on top (its fixed set and its training log, which also
+scores each batch before its update). On the fixed set, x falls smoothly and
+in steps of single errors, while y and Adam keep jumping from epoch to epoch:
+the averaging in x is directly visible. Adam behaves much like y; on the cubic
+task both stay clearly above x. Runs:
 [`runs/2026-11-25_22-08-32/`](runs/2026-11-25_22-08-32/) (quadratic),
 [`runs/2026-11-26_03-17-17/`](runs/2026-11-26_03-17-17/) (cubic).
 

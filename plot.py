@@ -5,7 +5,8 @@ plot_training_log: loss and error rate (1 - accuracy) per epoch of one run; used
 train.py after training. plot_comparison: error rates of several runs side by side.
 plot_tuples: the functions of the adversarial tuples (adversary.py) with their samples.
 plot_fixed_eval: loss and error rate per epoch on train.py's fixed evaluation set.
-plot_xyz_grid: Schedule-Free x, y and z of several runs, one panel per run, source and measure.
+plot_xyz_grid: Schedule-Free x, y and z of several runs (optionally with a reference run such as plain
+Adam), one panel per run, source and measure.
 Not meant to be run on its own.
 """
 
@@ -437,23 +438,31 @@ def plot_fixed_eval(curves: list[tuple], png_path: Path, title: str) -> None:
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
 
 
-def plot_xyz_grid(runs: list[tuple[Path, str]], png_path: Path, title: str) -> None:
+def plot_xyz_grid(runs: list[tuple], png_path: Path, title: str, reference_label: str = "Adam (lr 1e-3)") -> None:
     """Schedule-Free x, y and z of several runs: one column per run and source (fixed set, training
     batches), loss in the top row, error rate in the bottom row, three curves per panel.
 
-    runs: (run dir, name); each run needs FIXED_EVAL_FUNCTIONS and BATCH_SCORES columns. Panels in a row
-    share their log-scale y-range. x is drawn last so it stays visible where curves coincide; an epoch
-    without errors is shown as one error (1/n), a loss logged as 0 at LOSS_FLOOR.
+    runs: (run dir, name[, reference run dir]); each run needs FIXED_EVAL_FUNCTIONS and BATCH_SCORES
+    columns. An optional reference run (e.g. plain Adam, with FIXED_EVAL_FUNCTIONS) is drawn on top in
+    the 4th palette colour: its fixed_loss / fixed_accuracy in the fixed-set panels and its training log
+    (loss / accuracy, also scored on each batch before its update) in the training-batch panels.
+    Panels in a row share their log-scale y-range. x is drawn after y and z so it stays visible where
+    they coincide; an epoch without errors is shown as one error (1/n), a loss logged as 0 at LOSS_FLOOR.
     """
     versions = [("z", "z (plain iterate)", RUN_COLORS[2]), ("y", "y (gradient point)", RUN_COLORS[1]),
                 ("x", "x (averaged, saved)", RUN_COLORS[0])]  # drawing order: x on top
     panels = []  # (run name, source label, {version: (epochs, loss, error)})
-    for run_dir, name in runs:
-        run_dir = Path(run_dir)
+    has_reference = any(len(run) > 2 for run in runs)
+    for run in runs:
+        run_dir, name = Path(run[0]), run[1]
         config = json.loads((run_dir / "config.json").read_text())
         with open(run_dir / "log.csv", newline="") as f:
             rows = list(csv.DictReader(f))
         epochs = [int(r["epoch"]) for r in rows]
+        ref_rows = []
+        if len(run) > 2:
+            with open(Path(run[2]) / "log.csv", newline="") as f:
+                ref_rows = list(csv.DictReader(f))
         for source, label, n in (("fixed", f"fixed set ({config['fixed_eval_functions']:,} functions)",
                                   config["fixed_eval_functions"]),
                                  ("train", "training batches (scored before each update)",
@@ -463,6 +472,11 @@ def plot_xyz_grid(runs: list[tuple[Path, str]], png_path: Path, title: str) -> N
                 loss = [max(float(r[f"{source}_loss_{v}"]), LOSS_FLOOR) for r in rows]
                 error = [max(1.0 - float(r[f"{source}_accuracy_{v}"]), 1.0 / n) for r in rows]
                 curves[v] = (epochs, loss, error)
+            if ref_rows:  # fixed set: fixed_loss / fixed_accuracy; training batches: the training log
+                lk, ak = ("fixed_loss", "fixed_accuracy") if source == "fixed" else ("loss", "accuracy")
+                curves["ref"] = ([int(r["epoch"]) for r in ref_rows],
+                                 [max(float(r[lk]), LOSS_FLOOR) for r in ref_rows],
+                                 [max(1.0 - float(r[ak]), 1.0 / n) for r in ref_rows])
             panels.append((name, label, curves))
 
     with rc_context(RC):
@@ -475,6 +489,9 @@ def plot_xyz_grid(runs: list[tuple[Path, str]], png_path: Path, title: str) -> N
                 ax = axes[row, col]
                 for v, _, color in versions:
                     ax.plot(curves[v][0], curves[v][key], color=color, linewidth=1.2, solid_joinstyle="round")
+                if "ref" in curves:  # reference run on top
+                    ax.plot(curves["ref"][0], curves["ref"][key], color=RUN_COLORS[3], linewidth=1.2,
+                            solid_joinstyle="round")
                 ax.set_yscale("log")
                 ax.set_ylim(10.0**lo, 10.0**hi)
                 ax.yaxis.set_major_locator(LogLocator(base=10, numticks=hi - lo + 2))
@@ -499,12 +516,14 @@ def plot_xyz_grid(runs: list[tuple[Path, str]], png_path: Path, title: str) -> N
                     ax.spines[side].set_color(AXIS)
                 ax.tick_params(which="both", colors=AXIS, labelcolor=TEXT_MUTED, length=0, pad=5)
         handles = [Line2D([], [], color=color, linewidth=2, label=label) for _, label, color in reversed(versions)]
-        legend = fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.05, 0.925), ncol=3,
+        if has_reference:
+            handles.append(Line2D([], [], color=RUN_COLORS[3], linewidth=2, label=reference_label))
+        legend = fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.05, 0.925), ncol=len(handles),
                             frameon=False, handlelength=1.6, columnspacing=2.0)
         for text in legend.get_texts():
             text.set_color(TEXT_SECONDARY)
         fig.suptitle(title, x=0.05, y=0.985, ha="left", fontsize=13, fontweight="semibold", color=TEXT_PRIMARY)
-        fig.text(0.05, 0.945, "runs " + ", ".join(Path(r[0]).name for r in runs) + "  ·  panels in a row share "
+        fig.text(0.05, 0.945, "runs " + ", ".join(Path(p).name for r in runs for p in [r[0], *r[2:]]) + "  ·  panels in a row share "
                  "their scale  ·  epochs without errors drawn as one error, losses logged as 0 at "
                  f"{LOSS_FLOOR:g}", ha="left", fontsize=9, color=TEXT_SECONDARY)
         fig.subplots_adjust(left=0.05, right=0.99, top=0.82, bottom=0.08, wspace=0.08, hspace=0.12)
