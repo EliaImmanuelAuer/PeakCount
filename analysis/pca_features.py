@@ -51,7 +51,7 @@ with torch.no_grad():
         preds.append(model.classifier(h).argmax(1).cpu().numpy())
 F = np.concatenate(feats).astype(np.float64)
 pred = np.concatenate(preds)
-print(f"features {F.shape}; accuracy via features + classifier {np.mean(pred == labels):.3%} (should be 99.748%); "
+print(f"features {F.shape}; accuracy via features + classifier {np.mean(pred == labels):.3%} (should match the model's test accuracy); "
       f"channels that are 0 for every function: {int(np.sum(F.max(0) == 0))}")
 
 mean = F.mean(0)

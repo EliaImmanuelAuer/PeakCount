@@ -784,13 +784,16 @@ task both stay clearly above x. Runs:
 Projections of the 32 features of 600-epoch cubic-warp models: the output of
 the conv stack, i.e. the input of the final linear layer, for the 51,200 cubic
 test functions (seed 12345, minimum knot distance 0.05). Images of the Adam
-model ([`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/)) are in
-[`features/adam/`](features/adam/). Colours: blue / green / red for 0 / 1 / 2
+model ([`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/), 99.748% on
+this test set) are in [`features/adam/`](features/adam/), those of the
+Schedule-Free AdamW model
+([`runs/2026-11-26_03-17-17/`](runs/2026-11-26_03-17-17/), 99.953%) in
+[`features/schedule_free/`](features/schedule_free/) under the same names. Colours: blue / green / red for 0 / 1 / 2
 true peaks, shades for the patterns within a class. The scripts are in
 [`analysis/`](analysis/) and are run from the project folder, e.g.
 `python analysis/pca_features.py . runs/2026-11-25_03-00-28 features/adam/pca_panels.png`.
-In the Adam model, 5 of the 32 channels are 0 for every test function (dead
-ReLU channels).
+5 (Adam) and 4 (Schedule-Free) of the 32 channels are 0 for every test
+function (dead ReLU channels).
 
 ### PCA
 
@@ -810,6 +813,17 @@ Adam model:
   after the pre-warp), which splits the one-peak functions into two lobes.
 - One and two peaks overlap in this view, although the model separates them
   at 99.75%.
+
+Schedule-Free model ([`features/schedule_free/pca.png`](features/schedule_free/pca.png),
+[`features/schedule_free/pca_panels.png`](features/schedule_free/pca_panels.png)):
+
+- The same structure, but even more concentrated on PC1: 78.2% of the
+  variance (PC2 5.5%); 4 components cover 90%.
+- The classes lie further apart along PC1 (means −44.8 / −7.3 / 53.1), on a
+  scale about 2.5 times larger than Adam's; PC1 again correlates with the rise
+  of a single peak (+0.60).
+- PC2 still encodes the position of a single peak, but more weakly
+  (correlation +0.64 instead of +0.86).
 
 ### LDA
 
