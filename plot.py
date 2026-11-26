@@ -336,37 +336,46 @@ def plot_tuples(params: list, losses: list[float], num_samples: int, png_path: P
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
 
 
-def plot_fixed_eval(curves: list[tuple[Path, str, str, str]], png_path: Path, title: str) -> None:
+def plot_fixed_eval(curves: list[tuple], png_path: Path, title: str) -> None:
     """Loss (left) and error rate (right) per epoch on the fixed evaluation set, for up to 6 curves.
 
-    curves: (run dir, version, legend label, short label for the line ends); version "" reads fixed_loss / fixed_accuracy, "x" reads
-    fixed_loss_x / fixed_accuracy_x, and so on (train.FIXED_EVAL_FUNCTIONS). Both panels are
-    logarithmic; an epoch without errors is shown as one error (1/n for the n fixed functions), and a
-    loss logged as 0 at LOSS_FLOOR.
+    curves: (run dir, version, legend label, short label for the line ends[, source, colour slot]);
+    version "" reads fixed_loss / fixed_accuracy, "x" reads fixed_loss_x / fixed_accuracy_x, and so on
+    (train.FIXED_EVAL_FUNCTIONS). source "train" reads the per-batch scores train_loss_x, ... instead
+    (train.BATCH_SCORES), drawn dashed; colour slot picks the colour from RUN_COLORS (default: the
+    curve's position). Both panels are logarithmic; an epoch without errors is shown as one error (1/n
+    for the n scored functions), and a loss logged as 0 at LOSS_FLOOR.
     """
     if not 1 <= len(curves) <= len(RUN_COLORS):
         raise ValueError(f"can draw 1 to {len(RUN_COLORS)} curves, got {len(curves)}")
     data = []
-    for run_dir, version, label, short in curves:
+    for k, curve in enumerate(curves):
+        run_dir, version, label, short = curve[:4]
+        source = curve[4] if len(curve) > 4 else "fixed"
+        color = RUN_COLORS[curve[5] if len(curve) > 5 else k]
         run_dir = Path(run_dir)
-        n = json.loads((run_dir / "config.json").read_text())["fixed_eval_functions"]
+        config = json.loads((run_dir / "config.json").read_text())
+        n = config["fixed_eval_functions"] if source == "fixed" else config["functions_per_epoch"]
         with open(run_dir / "log.csv", newline="") as f:
             rows = list(csv.DictReader(f))
         suffix = f"_{version}" if version else ""
-        loss = [max(float(r[f"fixed_loss{suffix}"]), LOSS_FLOOR) for r in rows]  # logged 0 -> floor
-        raw_error = [1.0 - float(r[f"fixed_accuracy{suffix}"]) for r in rows]
+        loss = [max(float(r[f"{source}_loss{suffix}"]), LOSS_FLOOR) for r in rows]  # logged 0 -> floor
+        raw_error = [1.0 - float(r[f"{source}_accuracy{suffix}"]) for r in rows]
         data.append(dict(label=label, short=short, epochs=[int(r["epoch"]) for r in rows], loss=loss,
-                         error=[max(e, 1.0 / n) for e in raw_error], final_error=raw_error[-1], n=n))
+                         error=[max(e, 1.0 / n) for e in raw_error], final_error=raw_error[-1], n=n,
+                         color=color, source=source))
 
     with rc_context(RC):
         fig = Figure(figsize=(11, 4.8), dpi=150, facecolor=SURFACE)
         ax_loss, ax_err = fig.subplots(1, 2)
         handles = []
-        for d, color in zip(data, RUN_COLORS):
-            style = dict(color=color, linewidth=1.5, solid_capstyle="round", solid_joinstyle="round")
+        for d in data:
+            style = dict(color=d["color"], linewidth=1.5 if d["source"] == "fixed" else 1.1,
+                         linestyle="-" if d["source"] == "fixed" else (0, (4, 2)),
+                         solid_capstyle="round", solid_joinstyle="round")
             (line,) = ax_loss.plot(d["epochs"], d["loss"], **style,
-                                   label=f"{d['label']}  ·  final loss {d['loss'][-1]:.4f}, "
-                                         f"error {100 * d['final_error']:.2f}%")
+                                   label=f"{d['label']}  ·  final loss {d['loss'][-1]:.3g}, "
+                                         f"error {100 * d['final_error']:.3g}%")
             ax_err.plot(d["epochs"], d["error"], **style)
             handles.append(line)
 
@@ -409,12 +418,18 @@ def plot_fixed_eval(curves: list[tuple[Path, str, str, str]], png_path: Path, ti
         fig.suptitle(title, x=0.06, y=0.97, ha="left", fontsize=13, fontweight="semibold",
                      color=TEXT_PRIMARY)
         runs = sorted({Path(c[0]).name for c in curves})
-        fig.text(0.06, 0.905, f"the same {data[0]['n']:,} functions after every epoch  ·  runs "
-                 + ", ".join(runs), ha="left", fontsize=9, color=TEXT_SECONDARY)
+        fixed_n = next((d["n"] for d in data if d["source"] == "fixed"), None)
+        if any(d["source"] == "train" for d in data):
+            what = (f"solid: the same {fixed_n:,} fixed functions after every epoch  ·  " if fixed_n else "") +                 "dashed: the epoch's training batches, each scored before its update"
+        else:
+            what = f"the same {fixed_n:,} functions after every epoch"
+        fig.text(0.06, 0.905, what + "  ·  runs " + ", ".join(runs), ha="left", fontsize=9,
+                 color=TEXT_SECONDARY)
         legend = ax_loss.legend(handles=handles, loc="lower left", bbox_to_anchor=(0, 1.01),
                                 ncol=2, frameon=False, borderaxespad=0, handlelength=1.6,
                                 columnspacing=2.0)
         for text in legend.get_texts():
             text.set_color(TEXT_SECONDARY)
-        fig.subplots_adjust(left=0.06, right=0.94, top=0.72, bottom=0.12, wspace=0.32)
+        fig.subplots_adjust(left=0.06, right=0.94, top=0.72 if len(data) <= 4 else 0.68, bottom=0.12,
+                            wspace=0.32)
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)

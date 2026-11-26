@@ -702,6 +702,57 @@ logs) and [`comparisons/warp_600_fixed.png`](comparisons/warp_600_fixed.png)
 [`runs/2026-11-25_01-03-41/`](runs/2026-11-25_01-03-41/) (quadratic),
 [`runs/2026-11-25_03-00-28/`](runs/2026-11-25_03-00-28/) (cubic).
 
+### 600 epochs with Schedule-Free AdamW: quadratic vs cubic warp
+
+The same comparison as above with Schedule-Free AdamW (lr 2.5e-3, warmup over
+5% of the steps = 6,000 steps), otherwise the current defaults (minimum knot
+distance 0.05). Each run scored x, y and z after every epoch on a fixed set of
+12,800 functions and, with `BATCH_SCORES`, on every training batch just before
+its update: 12 values per epoch. All final models (x for Schedule-Free) were
+evaluated on the two test sets of 51,200 functions used above.
+
+| Accuracy on 51,200 test functions | SF, quadratic | SF, cubic | Adam, quadratic | Adam, cubic |
+|---|---|---|---|---|
+| **Quadratic test set** | 100.000% (0 wrong) | 100.000% (0 wrong) | 99.998% (1) | 99.994% (3) |
+| **Cubic test set** | 97.416% (1,323) | **99.953% (24)** | 96.186% (1,953) | 99.748% (129) |
+
+| Mean of epochs 501–600 | SF, quadratic | SF, cubic |
+|---|---|---|
+| Fixed set: error of x / y / z | 0.0000% / 0.016% / 58.6% | 0.040% / 0.102% / 65.8% |
+| Fixed set: loss of z | 342 | 1,064 |
+| Training batches: error of x / y / z | 0.0009% / 0.0087% / 59.0% | 0.048% / 0.105% / 66.1% |
+
+- **Schedule-Free beats Adam clearly on the cubic task.** On the cubic test set
+  the cubic models make 24 instead of 129 errors (McNemar z = +9.17: 11 wrong
+  for both, 118 only with Adam, 13 only with Schedule-Free). The remaining 24
+  are mostly missed low peaks (10) and high edges counted as peaks (5). The
+  quadratic models also transfer better (1,323 instead of 1,953 errors on cubic
+  data, z = +16.10). On the quadratic test set all four models make at most 3
+  errors, too few for a significant difference.
+- **The quadratic task is solved.** Both Schedule-Free models make no error on
+  the quadratic test set, and x of the quadratic run made no error on its
+  fixed set in any epoch after about epoch 200. On the cubic task, x still
+  improved slowly at the end (fixed-set error 0.055% in epochs 301–400, 0.040%
+  in epochs 501–600).
+- **x is the best of the three, y close behind, z unusable on its own.** z,
+  the plain iterate with a constant learning rate, has a loss of 300–1,000 and
+  misclassifies about 60% of the functions, although its average x is nearly
+  perfect. That is how the method is meant to work (only x is the model), but
+  the gap is extreme.
+- **Training batches and fixed set agree.** Each batch is scored before the
+  model trains on it, so for the model it is new data too; the per-batch
+  scores are a second, independent measurement rather than a sign of
+  memorization.
+- The training times (246 and 215 min) include the per-batch scoring and are
+  not comparable with other runs. The quadratic run stopped after its last
+  epoch on a chart bug (fixed in `plot.py`); its chart was drawn afterwards.
+
+Charts: [`comparisons/schedule_free_600_quadratic_xyz.png`](comparisons/schedule_free_600_quadratic_xyz.png)
+and [`comparisons/schedule_free_600_cubic_xyz.png`](comparisons/schedule_free_600_cubic_xyz.png)
+(solid: fixed set, dashed: training batches). Runs:
+[`runs/2026-11-25_22-08-32/`](runs/2026-11-25_22-08-32/) (quadratic),
+[`runs/2026-11-26_03-17-17/`](runs/2026-11-26_03-17-17/) (cubic).
+
 ## Feature visualizations
 
 Projections of the 32 features of the 600-epoch cubic-warp model
