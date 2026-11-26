@@ -875,6 +875,15 @@ Adam model:
   their features look like the other class.
 - Distances between the islands, their sizes and shapes carry no meaning.
 
+Schedule-Free model ([`features/schedule_free/umap.png`](features/schedule_free/umap.png)):
+
+- Again three separate islands, one per peak count.
+- The patterns within the one- and two-peak classes are more sorted than in
+  the Adam model: same pattern among the 15 nearest neighbours 91.8% / 61.7% /
+  42.9% in the 32-D features (Adam: 93.6% / 56.5% / 37.1%), 86.1% / 48.8% /
+  36.8% in the layout.
+- 20 of its 24 errors lie among functions of the class it predicted.
+
 ### t-SNE
 
 [`features/adam/tsne_10k.png`](features/adam/tsne_10k.png), from
