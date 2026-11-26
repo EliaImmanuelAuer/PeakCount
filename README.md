@@ -305,7 +305,7 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 - [x] Training data generation and peak definition (`data.py`)
 - [x] Training script (`train.py`)
 - [x] Training run
-- [ ] Evaluation
+- [x] Evaluation
 
 **Best result so far:** the 600-epoch Schedule-Free AdamW model trained with
 cubic warps ([`runs/2026-11-26_03-17-17/`](runs/2026-11-26_03-17-17/)) has an
