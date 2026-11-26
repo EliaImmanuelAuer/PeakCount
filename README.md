@@ -901,6 +901,18 @@ Adam model:
 - 16 of the 24 errors in the subset lie among functions of the predicted
   class.
 
+Schedule-Free model ([`features/schedule_free/tsne_10k.png`](features/schedule_free/tsne_10k.png),
+same 10,000 functions, 2.4 min):
+
+- The same three clusters in the same order; the no-peak cluster again splits
+  into monotone and V functions.
+- Same pattern among the 15 nearest neighbours: 87.5% / 55.3% / 39.0% in the
+  32-D features of the subset (Adam: 89.9% / 50.8% / 35.0%), 86.0% / 51.2% /
+  36.9% in the layout. As with UMAP, the one- and two-peak patterns are more
+  sorted than in the Adam model.
+- Only 4 of its errors fall into the subset; 3 of them lie among functions of
+  the predicted class.
+
 ## License
 
 [MIT](LICENSE)
