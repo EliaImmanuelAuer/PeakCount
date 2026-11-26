@@ -711,12 +711,8 @@ distance 0.05). Each run scored x, y and z after every epoch on a fixed set of
 its update: 12 values per epoch. All final models (x for Schedule-Free) were
 evaluated on the two test sets of 51,200 functions used above.
 
-| Accuracy on 51,200 test functions | SF, quadratic | SF, cubic | Adam, quadratic | Adam, cubic |
-|---|---|---|---|---|
-| **Quadratic test set** | 100.000% (0 wrong) | 100.000% (0 wrong) | 99.998% (1) | 99.994% (3) |
-| **Cubic test set** | 97.416% (1,323) | **99.953% (24)** | 96.186% (1,953) | 99.748% (129) |
-
-Loss (mean cross-entropy) and error on the same test sets, by training warp:
+Loss (mean cross-entropy) and error (with the number of misclassified functions)
+by training warp and test set:
 
 | Training warp | Test set | SF x loss | SF x error | Adam loss | Adam error |
 |---|---|---|---|---|---|
