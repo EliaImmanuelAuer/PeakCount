@@ -716,6 +716,18 @@ evaluated on the two test sets of 51,200 functions used above.
 | **Quadratic test set** | 100.000% (0 wrong) | 100.000% (0 wrong) | 99.998% (1) | 99.994% (3) |
 | **Cubic test set** | 97.416% (1,323) | **99.953% (24)** | 96.186% (1,953) | 99.748% (129) |
 
+Loss (mean cross-entropy) and error on the same test sets, by training warp:
+
+| Training warp | Test set | SF x loss | SF x error | Adam loss | Adam error |
+|---|---|---|---|---|---|
+| Quadratic | Quadratic | 0.000003 | 0.0000% (0) | 0.000051 | 0.0020% (1) |
+| Quadratic | Cubic | 0.2266 | 2.5840% (1,323) | 0.2342 | 3.8145% (1,953) |
+| Cubic | Quadratic | 0.000026 | 0.0000% (0) | 0.000307 | 0.0059% (3) |
+| Cubic | Cubic | 0.001581 | 0.0469% (24) | 0.008884 | 0.2520% (129) |
+
+SF x is the saved averaged weights of Schedule-Free AdamW; y and z were not
+saved at the end of the runs, so they can't be scored on the test sets.
+
 | Mean of epochs 501–600 | SF, quadratic | SF, cubic |
 |---|---|---|
 | Fixed set: error of x / y / z | 0.0000% / 0.016% / 58.6% | 0.040% / 0.102% / 65.8% |
