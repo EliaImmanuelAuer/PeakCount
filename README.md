@@ -732,7 +732,7 @@ by training warp and test set:
 | Quadratic | Quadratic | 0.000003 | 0.0000% (0) | 0.000051 | 0.0020% (1) |
 | Quadratic | Cubic | 0.2266 | 2.5840% (1,323) | 0.2342 | 3.8145% (1,953) |
 | Cubic | Quadratic | 0.000026 | 0.0000% (0) | 0.000307 | 0.0059% (3) |
-| Cubic | Cubic | 0.001581 | 0.0469% (24) | 0.008884 | 0.2520% (129) |
+| Cubic | Cubic | 0.001581 | **0.0469% (24)** | 0.008884 | 0.2520% (129) |
 
 SF x is the saved averaged weights of Schedule-Free AdamW; y and z were not
 saved at the end of the runs, so they can't be scored on the test sets.
