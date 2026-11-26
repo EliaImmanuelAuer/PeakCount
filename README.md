@@ -307,6 +307,12 @@ num_peaks = logits.argmax(dim=1)      # predicted peak count per function
 - [x] Training run
 - [ ] Evaluation
 
+**Best result so far:** the 600-epoch Schedule-Free AdamW model trained with
+cubic warps ([`runs/2026-11-26_03-17-17/`](runs/2026-11-26_03-17-17/)) has an
+error of only **0.0469%** (24 of 51,200) on the cubic test set (seed 12345,
+minimum knot distance 0.05) and makes no error on the quadratic test set. See
+[600 epochs with Schedule-Free AdamW](#600-epochs-with-schedule-free-adamw-quadratic-vs-cubic-warp).
+
 The first full training run (50 epochs on the UHD 620, about 9.5 minutes)
 reached a training accuracy of 98.20% in its last epoch, and 99.42% at best.
 See [`runs/2026-11-22_16-49-44/`](runs/2026-11-22_16-49-44/). That run used
