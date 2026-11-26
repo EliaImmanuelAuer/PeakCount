@@ -126,14 +126,26 @@ Each function is built from **knots**:
 
 Knots very close together, or a warping that squeezes a narrow peak further,
 can make a peak disappear between two sample points. The label is still the
-intended class. On the 51,200 test functions (seed 12345), the label differs
-from the number of peaks counted in the samples for this many functions:
+intended class. A second, harmless case looks similar in a strict count: where
+a warp is very flat near a peak's value, neighbouring samples can be exactly
+equal in float32, so the peak shows as a flat top of two or more equal samples
+instead of one sample above both neighbours. On the 51,200 test functions
+(seed 12345), the strict count (a sample above both neighbours) differs from
+the label for this many functions, split into peaks that are really not
+visible and flat tops:
 
 | | No minimum distance | Minimum distance 0.05 |
 |---|---|---|
-| Quadratic warp | 11 | 4 |
-| Cubic warp | 37 | 21 |
-| Shavgulidze warp | – | 6 |
+| Quadratic warp | 11 (4 not visible, 7 flat tops) | 4 (0 not visible, 4 flat tops) |
+| Cubic warp | 37 (15 not visible, 22 flat tops) | 21 (0 not visible, 21 flat tops) |
+| Shavgulidze warp | – | 6 (0 not visible, 6 flat tops) |
+
+So with the minimum distance, no test function has a peak that can't be seen in
+the samples. The models count flat tops mostly correctly; the 600-epoch
+Schedule-Free model with cubic warps, for example, gets 20 of the 21 right. The
+failure analyses below use the strict count, so their category "label doesn't
+match the samples" can contain flat tops; where the numbers are given, it is
+said which kind they are.
 
 **All results below used the quadratic warp and no minimum knot distance**,
 except the runs from 2026-11-25 onward, which say so (the two runs from
@@ -636,7 +648,7 @@ models were evaluated on the same 51,200 fresh warped functions (seed 12345).
 | Missed peaks / extra peaks | 25 / 48 | 27 / 1 |
 | Narrow peaks missed (< 4 samples) | 15 | 18 |
 | Extra peaks at a high edge | 47 | 1 |
-| Errors where the label doesn't match the samples | 3 | 3 |
+| Errors on peaks not visible in the samples | 3 | 3 |
 
 Schedule-Free AdamW makes 62% fewer errors than Adam on fresh data, a
 significant difference: 21 functions are wrong for both, 52 only with Adam and
@@ -644,7 +656,8 @@ significant difference: 21 functions are wrong for both, 52 only with Adam and
 longer training gives z = +14.32. The improvement comes almost entirely from
 the high edges: Adam counts 47 of them as peaks, Schedule-Free only 1. Missed
 narrow peaks stay about the same (15 vs 18). Of the 28 remaining errors, 3 are
-functions whose label doesn't match the samples, 18 are missed narrow peaks and
+functions with a peak that isn't visible in the samples at all (knots closer
+than one sample), 18 are missed narrow peaks and
 7 missed low peaks (rise < 0.03).
 
 The training accuracies of Schedule-Free AdamW are measured at the gradient
