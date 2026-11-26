@@ -5,6 +5,7 @@ plot_training_log: loss and error rate (1 - accuracy) per epoch of one run; used
 train.py after training. plot_comparison: error rates of several runs side by side.
 plot_tuples: the functions of the adversarial tuples (adversary.py) with their samples.
 plot_fixed_eval: loss and error rate per epoch on train.py's fixed evaluation set.
+plot_xyz_grid: Schedule-Free x, y and z of several runs, one panel per run, source and measure.
 Not meant to be run on its own.
 """
 
@@ -16,6 +17,7 @@ from pathlib import Path
 from matplotlib import rc_context
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter, LogLocator, MaxNLocator, NullFormatter
+from matplotlib.lines import Line2D
 
 SURFACE = "#fcfcfb"
 TEXT_PRIMARY = "#0b0b0b"
@@ -432,4 +434,78 @@ def plot_fixed_eval(curves: list[tuple], png_path: Path, title: str) -> None:
             text.set_color(TEXT_SECONDARY)
         fig.subplots_adjust(left=0.06, right=0.94, top=0.72 if len(data) <= 4 else 0.68, bottom=0.12,
                             wspace=0.32)
+        fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
+
+
+def plot_xyz_grid(runs: list[tuple[Path, str]], png_path: Path, title: str) -> None:
+    """Schedule-Free x, y and z of several runs: one column per run and source (fixed set, training
+    batches), loss in the top row, error rate in the bottom row, three curves per panel.
+
+    runs: (run dir, name); each run needs FIXED_EVAL_FUNCTIONS and BATCH_SCORES columns. Panels in a row
+    share their log-scale y-range. x is drawn last so it stays visible where curves coincide; an epoch
+    without errors is shown as one error (1/n), a loss logged as 0 at LOSS_FLOOR.
+    """
+    versions = [("z", "z (plain iterate)", RUN_COLORS[2]), ("y", "y (gradient point)", RUN_COLORS[1]),
+                ("x", "x (averaged, saved)", RUN_COLORS[0])]  # drawing order: x on top
+    panels = []  # (run name, source label, {version: (epochs, loss, error)})
+    for run_dir, name in runs:
+        run_dir = Path(run_dir)
+        config = json.loads((run_dir / "config.json").read_text())
+        with open(run_dir / "log.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        epochs = [int(r["epoch"]) for r in rows]
+        for source, label, n in (("fixed", f"fixed set ({config['fixed_eval_functions']:,} functions)",
+                                  config["fixed_eval_functions"]),
+                                 ("train", "training batches (scored before each update)",
+                                  config["functions_per_epoch"])):
+            curves = {}
+            for v, _, _ in versions:
+                loss = [max(float(r[f"{source}_loss_{v}"]), LOSS_FLOOR) for r in rows]
+                error = [max(1.0 - float(r[f"{source}_accuracy_{v}"]), 1.0 / n) for r in rows]
+                curves[v] = (epochs, loss, error)
+            panels.append((name, label, curves))
+
+    with rc_context(RC):
+        fig = Figure(figsize=(4.2 * len(panels), 7.6), dpi=150, facecolor=SURFACE)
+        axes = fig.subplots(2, len(panels), sharex=True, squeeze=False)
+        for row, (key, ylabel, fmt) in enumerate(((1, "Loss (cross-entropy, log scale)", plain_decimal),
+                                                  (2, "Error rate (log scale)", plain_percent))):
+            lo, hi = decade_range([v for _, _, curves in panels for c in curves.values() for v in c[key]])
+            for col, (name, label, curves) in enumerate(panels):
+                ax = axes[row, col]
+                for v, _, color in versions:
+                    ax.plot(curves[v][0], curves[v][key], color=color, linewidth=1.2, solid_joinstyle="round")
+                ax.set_yscale("log")
+                ax.set_ylim(10.0**lo, 10.0**hi)
+                ax.yaxis.set_major_locator(LogLocator(base=10, numticks=hi - lo + 2))
+                ax.yaxis.set_major_formatter(FuncFormatter(fmt))
+                ax.yaxis.set_minor_formatter(NullFormatter())
+                ax.set_xlim(1, curves["x"][0][-1])
+                ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+                if row == 0:
+                    ax.set_title(f"{name}\n{label}", loc="left", fontsize=9.5, color=TEXT_SECONDARY)
+                if row == 1:
+                    ax.set_xlabel("Epoch", color=TEXT_SECONDARY)
+                if col == 0:
+                    ax.set_ylabel(ylabel, color=TEXT_SECONDARY)
+                else:
+                    ax.tick_params(labelleft=False)
+                ax.set_facecolor(SURFACE)
+                ax.grid(axis="y", which="major", color=GRIDLINE, linewidth=1)
+                ax.set_axisbelow(True)
+                for side in ("top", "right"):
+                    ax.spines[side].set_visible(False)
+                for side in ("left", "bottom"):
+                    ax.spines[side].set_color(AXIS)
+                ax.tick_params(which="both", colors=AXIS, labelcolor=TEXT_MUTED, length=0, pad=5)
+        handles = [Line2D([], [], color=color, linewidth=2, label=label) for _, label, color in reversed(versions)]
+        legend = fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.05, 0.925), ncol=3,
+                            frameon=False, handlelength=1.6, columnspacing=2.0)
+        for text in legend.get_texts():
+            text.set_color(TEXT_SECONDARY)
+        fig.suptitle(title, x=0.05, y=0.985, ha="left", fontsize=13, fontweight="semibold", color=TEXT_PRIMARY)
+        fig.text(0.05, 0.945, "runs " + ", ".join(Path(r[0]).name for r in runs) + "  ·  panels in a row share "
+                 "their scale  ·  epochs without errors drawn as one error, losses logged as 0 at "
+                 f"{LOSS_FLOOR:g}", ha="left", fontsize=9, color=TEXT_SECONDARY)
+        fig.subplots_adjust(left=0.05, right=0.99, top=0.82, bottom=0.08, wspace=0.08, hspace=0.12)
         fig.savefig(png_path, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)

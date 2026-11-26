@@ -747,9 +747,11 @@ evaluated on the two test sets of 51,200 functions used above.
   not comparable with other runs. The quadratic run stopped after its last
   epoch on a chart bug (fixed in `plot.py`); its chart was drawn afterwards.
 
-Charts: [`comparisons/schedule_free_600_quadratic_xyz.png`](comparisons/schedule_free_600_quadratic_xyz.png)
-and [`comparisons/schedule_free_600_cubic_xyz.png`](comparisons/schedule_free_600_cubic_xyz.png)
-(solid: fixed set, dashed: training batches). Runs:
+Chart: [`comparisons/schedule_free_600_xyz.png`](comparisons/schedule_free_600_xyz.png), one
+column per run and source (fixed set, training batches), loss on top and error
+rate below, x drawn on top of y and z. On the fixed set, x falls smoothly and
+in steps of single errors, while y keeps jumping from epoch to epoch: the
+averaging in x is directly visible. Runs:
 [`runs/2026-11-25_22-08-32/`](runs/2026-11-25_22-08-32/) (quadratic),
 [`runs/2026-11-26_03-17-17/`](runs/2026-11-26_03-17-17/) (cubic).
 
