@@ -29,6 +29,9 @@ ERROR_COLOR = "#eb6834"  # categorical slot 2 (orange)
 # comparing runs. Several of them are light on the surface, so lines also get direct labels.
 RUN_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 LABEL_MIN_GAP = 0.05  # minimum vertical distance of end labels, as a fraction of the axes height
+# train.py logs losses with 6 decimals, so a loss below 5e-7 is logged as 0; on a log axis it is drawn
+# at this resolution instead (and the subtitle says so).
+LOSS_FLOOR = 1e-6
 
 RC = {
     "font.family": ["Segoe UI", "DejaVu Sans"],
@@ -70,7 +73,9 @@ def plot_training_log(csv_path: Path, png_path: Path) -> None:
         raise ValueError(f"{csv_path} contains no epochs")
 
     epochs = [int(r["epoch"]) for r in rows]
-    loss = [float(r["loss"]) for r in rows]
+    raw_loss = [float(r["loss"]) for r in rows]
+    loss = [max(v, LOSS_FLOOR) for v in raw_loss]
+    zero_loss = sum(v < LOSS_FLOOR for v in raw_loss)
     seen = [int(r["functions_seen"]) for r in rows]
     per_epoch = [s - prev for s, prev in zip(seen, [0] + seen[:-1])]
     raw_error = [1.0 - float(r["accuracy"]) for r in rows]
@@ -134,6 +139,8 @@ def plot_training_log(csv_path: Path, png_path: Path) -> None:
                     f"loss {loss[-1]:.4f}, error rate {100 * raw_error[-1]:.2f}%")
         if clamped:
             subtitle += f"  ·  {clamped} epoch(s) at 100% accuracy shown as 1 error"
+        if zero_loss:
+            subtitle += f"  ·  {zero_loss} epoch(s) with loss logged as 0 shown at {LOSS_FLOOR:g}"
         fig.suptitle("PeakCNN training", x=0.08, y=0.97, ha="left",
                      fontsize=13, fontweight="semibold", color=TEXT_PRIMARY)
         fig.text(0.08, 0.905, subtitle, ha="left", fontsize=9, color=TEXT_SECONDARY)
@@ -334,7 +341,8 @@ def plot_fixed_eval(curves: list[tuple[Path, str, str, str]], png_path: Path, ti
 
     curves: (run dir, version, legend label, short label for the line ends); version "" reads fixed_loss / fixed_accuracy, "x" reads
     fixed_loss_x / fixed_accuracy_x, and so on (train.FIXED_EVAL_FUNCTIONS). Both panels are
-    logarithmic; an epoch without errors is shown as one error (1/n for the n fixed functions).
+    logarithmic; an epoch without errors is shown as one error (1/n for the n fixed functions), and a
+    loss logged as 0 at LOSS_FLOOR.
     """
     if not 1 <= len(curves) <= len(RUN_COLORS):
         raise ValueError(f"can draw 1 to {len(RUN_COLORS)} curves, got {len(curves)}")
@@ -345,7 +353,7 @@ def plot_fixed_eval(curves: list[tuple[Path, str, str, str]], png_path: Path, ti
         with open(run_dir / "log.csv", newline="") as f:
             rows = list(csv.DictReader(f))
         suffix = f"_{version}" if version else ""
-        loss = [float(r[f"fixed_loss{suffix}"]) for r in rows]
+        loss = [max(float(r[f"fixed_loss{suffix}"]), LOSS_FLOOR) for r in rows]  # logged 0 -> floor
         raw_error = [1.0 - float(r[f"fixed_accuracy{suffix}"]) for r in rows]
         data.append(dict(label=label, short=short, epochs=[int(r["epoch"]) for r in rows], loss=loss,
                          error=[max(e, 1.0 / n) for e in raw_error], final_error=raw_error[-1], n=n))
